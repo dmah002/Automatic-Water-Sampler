@@ -61,9 +61,9 @@ unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
 const int DEBOUNCE_DELAY = 10;
 
 //duration to turn on the pump for 
-int   WASTE =6000;
+int   WASTE = 6000;
 int   COLLECT = 3000;
-int   MOTOR_SPEED = 175;
+int   MOTOR_SPEED = 125;
 
 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 OneWire oneWire(ONE_WIRE_BUS);
@@ -97,7 +97,7 @@ void setup(void)
   lcd.setCursor(0,0);
   lcd.print("David's FYP Proj ");
   lcd.setCursor(2,1);
-  lcd.print("micromonas");
+  lcd.print("DEMO TEST");
   delay(3000);
 
   //choose between Norm and 3in3 using the knob  (turn left for Norm, Right for 3 in 3 ) and hit "ok" to enter the input
@@ -224,7 +224,7 @@ void select_mode()
 }
     else{    
       MODE = "3in3";
-      sampling_interval = 3*20000; //3600000; 
+      sampling_interval = 3*33000; //3600000; 
       }    
     lcd.print(String("Select Mode:"+ MODE));   
     lcd.setCursor(0, 1);         // move cursor to   (2, 1)
@@ -279,7 +279,7 @@ void setup_temp()
   delay(1000);
   sensors.requestTemperatures();  
   temp_now = sensors.getTempCByIndex(0);
-  while ( temp_now -15 >= temperature_set  ){ // REMOVE THE -15 WHEN CHECKING
+  while ( temp_now  -15 >= temperature_set  ){ // REMOVE THE -15 WHEN CHECKING
   
     sensors.requestTemperatures();  
     temp_now = sensors.getTempCByIndex(0);
@@ -289,7 +289,7 @@ void setup_temp()
     lcd.setCursor(0,1);
     lcd.print("Now:");
     lcd.setCursor(4,1);
-	
+  
     if (temp_now<10){lcd.print(String(" ")+String(int(temp_now))+ String("C"));}
     else{lcd.print(String(int(temp_now ) ) + String("C"));}
     lcd.setCursor(9,1);

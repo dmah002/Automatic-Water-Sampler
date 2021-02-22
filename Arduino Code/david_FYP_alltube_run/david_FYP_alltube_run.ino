@@ -27,7 +27,7 @@ LiquidCrystal_I2C lcd(0x27, 16, 2); // I2C address 0x27, 16 column and 2 rows
 
 
 float mode_read;
-String MODE = "Norm" ; // "Norm": normal mode, sample once over hour.  "3in3": sample 3 times every 3 hours
+String MODE = "Norm" ; // "Norm": normal mode, sample once over hour.  "10in1": sample 3 times every 3 hours
 
 float temperature_set;
 float range = 0.3 ;
@@ -61,9 +61,9 @@ unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
 const int DEBOUNCE_DELAY = 10;
 
 //duration to turn on the pump for 
-int   WASTE = 7000;
-int   COLLECT = 3000;
-int   MOTOR_SPEED = 75;
+int   WASTE = 3000;
+int   COLLECT = 2000;
+int   MOTOR_SPEED = 75 ;
 
 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 OneWire oneWire(ONE_WIRE_BUS);
@@ -97,10 +97,10 @@ void setup(void)
   lcd.setCursor(0,0);
   lcd.print("David's FYP Proj ");
   lcd.setCursor(2,1);
-  lcd.print("fightoplankton");
+  lcd.print("TUBE POS TEST");
   delay(3000);
 
-  //choose between Norm and 3in3 using the knob  (turn left for Norm, Right for 3 in 3 ) and hit "ok" to enter the input
+  //choose between Norm and 10in1 using the knob  (turn left for Norm, Right for 3 in 3 ) and hit "ok" to enter the input
   select_mode();
   
   // User will choose temperature, the system will cool down to selected 
@@ -183,7 +183,7 @@ void loop(void)
     }
 
   if ((timeleft<1)&& (SAMPLE_COUNT <10) ){    
-    if ((MODE == "Norm" || (MODE=="3in3" && SAMPLE_COUNT<9))){
+    if ((MODE == "Norm" || (MODE=="10in1" && SAMPLE_COUNT<9))){
       Serial.println("FETCH");// call function
       lcd.clear();
       lcd.setCursor(0,0);
@@ -220,11 +220,11 @@ void select_mode()
     
     if (mode_read <2.5){    
       MODE = "Norm";
-      sampling_interval = 3600000; //3600000; 
+      sampling_interval = 20000; //3600000; 
 }
     else{    
-      MODE = "3in3";
-      sampling_interval = 3*3600000; //3600000; 
+      MODE = "10in1";
+      sampling_interval = 10000; //3600000; 
       }    
     lcd.print(String("Select Mode:"+ MODE));   
     lcd.setCursor(0, 1);         // move cursor to   (2, 1)
@@ -279,7 +279,7 @@ void setup_temp()
   delay(1000);
   sensors.requestTemperatures();  
   temp_now = sensors.getTempCByIndex(0);
-  while ( temp_now  >= temperature_set  ){ // REMOVE THE -15 WHEN CHECKING
+  while ( temp_now  -15 >= temperature_set  ){ // REMOVE THE -15 WHEN CHECKING
   
     sensors.requestTemperatures();  
     temp_now = sensors.getTempCByIndex(0);
@@ -289,7 +289,7 @@ void setup_temp()
     lcd.setCursor(0,1);
     lcd.print("Now:");
     lcd.setCursor(4,1);
-	
+  
     if (temp_now<10){lcd.print(String(" ")+String(int(temp_now))+ String("C"));}
     else{lcd.print(String(int(temp_now ) ) + String("C"));}
     lcd.setCursor(9,1);
@@ -359,8 +359,8 @@ void fetch()
   digitalWrite(PUMP_RELAY, HIGH);
   delay(1000);
   
- if ((MODE == "3in3" ) && (SAMPLE_COUNT < 10)){
-  for (int scroller = 0 ; scroller<2 ; scroller ++){
+ if ((MODE == "10in1" ) && (SAMPLE_COUNT < 10)){
+  for (int scroller = 0 ; scroller<9 ; scroller ++){
     move(front, 1 );
     delay(1000);  
     digitalWrite(PUMP_RELAY ,LOW);    
@@ -368,7 +368,7 @@ void fetch()
     digitalWrite(PUMP_RELAY, HIGH);
     delay(1000);
     }
-  SAMPLE_COUNT  +=2;
+  SAMPLE_COUNT  +=9;
   }
 
   move(back, SAMPLE_COUNT);
