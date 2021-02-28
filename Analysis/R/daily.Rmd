@@ -44,46 +44,36 @@ library("readxl") # Read excel file
 library("readr") 
 library("lubridate") 
 library("tidyr") 
+library("stringr") 
  
 ```
 
 ```{r, echo = FALSE, message = FALSE}
 
-# Read the metadata
-flaskdata <- read_csv("../data/metadata/flaskdata.csv")
-
-# Add time elapsed since culture start
-flaskdata <- flaskdata %>% 
-  dplyr::mutate(julian_culture_st= make_datetime(flaskdata$`culture year`,flaskdata$`culture month`,flaskdata$`culture day`,flaskdata$`culture hour`,flaskdata$`culture min`)) %>% 
-  dplyr::mutate(julian_sample_st= make_datetime(flaskdata$`sample year`,flaskdata$`sample month`,flaskdata$`sample day`,flaskdata$`sample hour`,flaskdata$`sample min`))%>% 
-  dplyr::mutate(days_elapsed = julian_sample_st-julian_culture_st) %>% 
-  dplyr::mutate(FA = paste(flask,attempt, sep = "")) %>%
-  dplyr::mutate(light_on = format(make_datetime(hour = flaskdata$`light hour`, min = flaskdata$`light min`), format = "%H:%M:%S")) %>%
-  dplyr::mutate(dark_on = format(make_datetime(hour = flaskdata$`dark hour`, min = flaskdata$`dark min`), format = "%H:%M:%S")) %>%
-  dplyr::mutate(datetime_1_tube_change= make_datetime(flaskdata$`1 tube change year`,flaskdata$`1 tube change month`,flaskdata$`1 tube change day`,flaskdata$`1 tube change hour`,flaskdata$`1 tube change min`))  %>% 
-  dplyr::mutate(datetime_2_tube_change= make_datetime(flaskdata$`2 tube change year`,flaskdata$`2 tube change month`,flaskdata$`2 tube change day`,flaskdata$`2 tube change hour`,flaskdata$`2 tube change min`))  %>% 
-  dplyr::mutate(datetime_3_tube_change= make_datetime(flaskdata$`3 tube change year`,flaskdata$`3 tube change month`,flaskdata$`3 tube change day`,flaskdata$`3 tube change hour`,flaskdata$`3 tube change min`))  %>%
-  dplyr::mutate(datetime_4_tube_change= make_datetime(flaskdata$`4 tube change year`,flaskdata$`4 tube change month`,flaskdata$`4 tube change day`,flaskdata$`4 tube change hour`,flaskdata$`4 tube change min`)) 
-
 ## Read the data
 
 # Find all csv files 
-myfiles = list.files(path="../data", pattern="*.csv", full.names=TRUE)
+myfiles = list.files(path="../data/daily_data", pattern="*.csv", full.names=TRUE)
 
 # Read all csv files
 data_all <- lapply(myfiles, read_csv, skip =2)
 data <- do.call(rbind, data_all)
 
 # Split the tube names
+data <- full_join(filter(data, 
+                             data$`Tube Name:` %in% str_subset(data$`Tube Name:`, "FF") == "TRUE") %>% separate("Tube Name:", c("ID", "FF","dilu"), " "),
+                      filter(data, data$`Tube Name:` %in% str_subset(data$`Tube Name:`, "FF") == "FALSE") %>% separate("Tube Name:", c("ID","dilu"), " "))
+
+
 data <- data %>%
-  dplyr::mutate(flask =  substr(`Tube Name:`, 1,1), 
-                attempt = substr(`Tube Name:`, 2,2),
-                hour_index = substr(`Tube Name:`, 3,4),
-                AorM = substr(`Tube Name:`, 5,5),
-                repli = substr(`Tube Name:`, 6,6)
-                ) %>%
-  dplyr::mutate(FA = paste(flask,attempt, sep = ""),
-                FAhi = paste(flask, attempt,hour_index, sep = ""))
+  separate(ID, 
+           into = c("repli", "day"), 
+           sep = "(?<=[A-Za-z])(?=[0-9])"
+           ) %>%
+  separate(dilu, 
+           into = c("dil_factor", "X"), 
+           sep = "(?<=[0-9])(?=[A-Za-z])"
+           )
 
 ## Compare both dataframes to get julian start time and light regime
 julian_time <- data.frame()
