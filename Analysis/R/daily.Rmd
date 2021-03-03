@@ -45,6 +45,7 @@ library("readr")
 library("lubridate") 
 library("tidyr") 
 library("stringr") 
+library("scales")
  
 ```
 
@@ -61,225 +62,146 @@ data <- do.call(rbind, data_all)
 
 # Split the tube names
 data <- full_join(filter(data, 
-                             data$`Tube Name:` %in% str_subset(data$`Tube Name:`, "FF") == "TRUE") %>% separate("Tube Name:", c("ID", "FF","dilu"), " "),
-                      filter(data, data$`Tube Name:` %in% str_subset(data$`Tube Name:`, "FF") == "FALSE") %>% separate("Tube Name:", c("ID","dilu"), " "))
+                             data$`Tube Name:` %in% str_subset(data$`Tube Name:`, "FF") == "TRUE") %>% 
+                    separate("Tube Name:", c("ID", "FF","dilu"), " "),
+                      filter(data, data$`Tube Name:` %in% str_subset(data$`Tube Name:`, "FF") == "FALSE") %>% 
+                    separate("Tube Name:", c("ID","dilu"), " "))
 
-
+# Split ID cell and dilution cells
 data <- data %>%
   separate(ID, 
            into = c("repli", "day"), 
            sep = "(?<=[A-Za-z])(?=[0-9])"
            ) %>%
   separate(dilu, 
-           into = c("dil_factor", "X"), 
+           into = c("dil_factor", "start_cells"), 
            sep = "(?<=[0-9])(?=[A-Za-z])"
            )
 
-## Compare both dataframes to get julian start time and light regime
-julian_time <- data.frame()
-light_regime <- data.frame()
+
 for (row in 1:nrow(data)){
-index <- match(data[row,"FA"],flaskdata$FA)
-julian_time <- rbind(julian_time,as.numeric(flaskdata[index,"days_elapsed"])+as.numeric(data[row,"hour_index"])/24)
-light_regime <- rbind(light_regime, flaskdata[index,"light regime"])
-}
-names(julian_time)[1] <- "julian_time"
-data<- cbind(data, julian_time)
-names(light_regime)[1] <- "light_regime"
-data<- cbind(data, light_regime)
-
-# Add time sampled 
-data <- data %>%
-  dplyr::mutate(julian_time_diff = as.difftime(data$julian_time, format = "%d", units = "days"))
-sample_datetime <- data.frame()
-for (row in 1:nrow(data)){
-index <- match(data[row,"FA"],flaskdata$FA)
-sample_datetime <- rbind(sample_datetime, flaskdata[index,"julian_culture_st"]+data.frame(data[row,"julian_time_diff"]))
-}
-names(sample_datetime)[1] <- "sample_datetime"
-data<- cbind(data, sample_datetime)
-
-# Extract just time from sample
-data <- data %>%
-  dplyr::mutate(sample_time = format(sample_datetime, format = "%H:%M:%S"))
-# data$sample_time <- strptime(data$sample_time,format="%H:%M")
-
-# Loop through data to add "Light" or "Dark" as a another variable in the last column 
-lightORdark <- data.frame()
-LorD<- ""
-# Check if it is light or dark
-for (row in 1:nrow(data)){
-index <- match(data[row,"FA"],flaskdata$FA)
-# A, B, E, F have dark cycles ending after midnight. The rest of the samples cycles should end before midnight. 
-if(data[row,"flask"] == "A" | data[row,"flask"] == "B" |data[row,"flask"] == "E"|data[row,"flask"] == "F"){
-  ifelse(data[row,"sample_time"] >= flaskdata[index,"dark_on"] & data[row,"sample_time"] <= flaskdata[index,"light_on"], LorD <- "dark", LorD <- "light")
+  # Replace NA with default values for columns ("day", "dil_factor", "FF")
+  if (is.na(data[row,"day"]) == "TRUE"){
+    data[row,"day"] <- -1
   }
-else {
-  ifelse(data[row,"sample_time"] >= flaskdata[index,"light_on"] & data[row,"sample_time"] <= flaskdata[index,"dark_on"], LorD <- "light", LorD <- "dark")
+  if (is.na(data[row,"dil_factor"]) == "TRUE"){
+    if (data[row,"day"] == 6){
+      data[row,"dil_factor"] <- 2}
+    else if (data[row,"day"] == 7){
+      data[row,"dil_factor"] <- 4}
+    else if (data[row,"day"] == 8){
+      data[row,"dil_factor"] <- 8}
+    else if (data[row,"day"] == 9){
+      data[row,"dil_factor"] <- 16}
+    else {data[row,"dil_factor"] <- 1
+    }
+  } 
+  if (is.na(data[row,"FF"]) == "TRUE"){
+    data[row,"FF"] <- "NFF"
   }
-lightORdark <- rbind(lightORdark, data.frame(LorD))
-}
-names(lightORdark)[1] <- "lightORdark"
-data<- cbind(data, lightORdark)
-
-
-
-# Loop through data and compare sampling times with the tube change data to determine how long it has been sitting in the sampler for
-
-time_since_tube_change <- data.frame()
-time_tube_change <- ""
-
-# data<- filter(data,flask == "E")
-
-for (row in 1:nrow(data)) {
-  index <- match(data[row,"FA"],flaskdata$FA)
-  if(data[row,"AorM"] == "A"){
-    if (is.na(flaskdata[index,"datetime_1_tube_change"]) == "TRUE"){time_tube_change <- 0}
-    else if (as.numeric(data[row,"sample_datetime"]) < as.numeric(flaskdata[index,"datetime_1_tube_change"])){
-      time_tube_change <- as.numeric(flaskdata[index,"datetime_1_tube_change"]) - as.numeric(data[row,"sample_datetime"])
-    }
-    else if (is.na(flaskdata[index,"datetime_2_tube_change"]) == "TRUE"){time_tube_change <- 0}
-    else if (as.numeric(data[row,"sample_datetime"]) >= as.numeric(flaskdata[index,"datetime_1_tube_change"]) & as.numeric(data[row,"sample_datetime"]) < as.numeric(flaskdata[index,"datetime_2_tube_change"])){
-      time_tube_change <- as.numeric(flaskdata[index,"datetime_2_tube_change"]) - as.numeric(data[row,"sample_datetime"])
-    }
-    else if (is.na(flaskdata[index,"datetime_3_tube_change"]) == "TRUE"){time_tube_change <- 0}
-    else if (as.numeric(data[row,"sample_datetime"]) >= as.numeric(flaskdata[index,"datetime_2_tube_change"]) & as.numeric(data[row,"sample_datetime"]) < as.numeric(flaskdata[index,"datetime_3_tube_change"])){
-      time_tube_change <- as.numeric(flaskdata[index,"datetime_3_tube_change"]) - as.numeric(data[row,"sample_datetime"])
-    }
-    else if (is.na(flaskdata[index,"datetime_4_tube_change"]) == "TRUE"){time_tube_change <- 0}
-    else if (as.numeric(data[row,"sample_datetime"]) >= as.numeric(flaskdata[index,"datetime_2_tube_change"]) & as.numeric(data[row,"sample_datetime"]) < as.numeric(flaskdata[index,"datetime_3_tube_change"])){
-      time_tube_change <- as.numeric(flaskdata[index,"datetime_4_tube_change"]) - as.numeric(data[row,"sample_datetime"])
-    }
-    else {
-      time_tube_change <- 0
-    }
+  if (data[row,"repli"] == "A"|data[row,"repli"] == "B"|data[row,"repli"] == "C"){
+    data[row,"start_cells"] <- "10000"
+  }  
+  if (data[row,"repli"] == "X"|data[row,"repli"] == "Y"|data[row,"repli"] == "Z"){
+    data[row,"start_cells"] <- "1000"
   }
-else {time_tube_change <- 0}
-# divide by 3600 because POSIXct as.numeric is in seconds. So final is hours since tube change. 
-time_since_tube_change <- rbind(time_since_tube_change, time_tube_change/3600)
 }
-names(time_since_tube_change)[1] <- "time_since_tube_change"
-data<- cbind(data, time_since_tube_change)
+
+# Create metadata df 
+time_start <- data.frame("year" = 2020, "month" = 10, "day" = 21, "hour" = 11, "min" = 30) %>%
+  dplyr::mutate("datetime" = make_datetime(year, month, day, hour, min))
+
+data <- data %>% 
+  dplyr::mutate("sample_datetime" = as.numeric(day)*(60*60*24) + time_start$datetime,
+                "day_FF_start_cells" = paste(day,FF,start_cells, sep = ""), 
+                "Weighted Picochlorum Events/μL(V)" = data$`Picochlorum Events/μL(V)` * as.numeric(data$dil_factor))
 
 
 # Extract the more useful data
 data_pico <- data %>%
-  select(`flask`,attempt, hour_index, FAhi, AorM, repli,light_regime,julian_time,sample_datetime, sample_time,lightORdark,time_since_tube_change,`Picochlorum Events`,`Picochlorum Events/μL(V)`, `Picochlorum Median FSC-A`, `Picochlorum SD FSC-A`, `Picochlorum Median SSC-A`, `Picochlorum SD SSC-A`, `Picochlorum Median PC5.5-A`, `Picochlorum SD PC5.5-A`, `Picochlorum Median PE-A`, `Picochlorum SD PE-A`)
+  select(day_FF_start_cells,start_cells,`repli`,day, FF, dil_factor,sample_datetime,`Picochlorum Events`,`Weighted Picochlorum Events/μL(V)`,`Picochlorum Events/μL(V)`, `Picochlorum Median FSC-A`, `Picochlorum SD FSC-A`, `Picochlorum Median SSC-A`, `Picochlorum SD SSC-A`, `Picochlorum Median PC5.5-A`, `Picochlorum SD PC5.5-A`, `Picochlorum Median PE-A`, `Picochlorum SD PE-A`) 
+
+# Select rows of dilutions that best fit 10^3 rule
+
+data_pico_no0<- filter(data_pico,repli =="A"|repli == "B"|repli == "C"|repli == "X"|repli == "Y"|repli == "Z")
+data_pico_no0_Rdil<- data.frame()
+keep_rows <-data.frame()
+for(row in 1:nrow(data_pico_no0)){
+  if(data_pico_no0[row,"day"] == 10){
+    keep_rows <- filter(data_pico_no0[row,],dil_factor == 16)
+  }
+  else if(data_pico_no0[row,"day"] == 11){
+    keep_rows <- filter(data_pico_no0[row,],dil_factor == 32) 
+  }
+  else if(data_pico_no0[row,"day"] == 12){
+    keep_rows <- filter(data_pico_no0[row,],dil_factor == 32)
+  }  
+  else if(data_pico_no0[row,"day"] == 13){
+    keep_rows <- filter(data_pico_no0[row,],dil_factor == 64)
+  }
+  else if(data_pico_no0[row,"day"] == 14){
+    keep_rows <- filter(data_pico_no0[row,],dil_factor == 64)
+  }  
+  else {
+    keep_rows <- data_pico_no0[row,]
+  }
+  data_pico_no0_Rdil <-rbind(data_pico_no0_Rdil,keep_rows)
+}
+
+# Mean of optimal dilutions for each starting concentration 
+data_pico_mean <- data_pico_no0_Rdil %>% 
+  group_by(day_FF_start_cells,start_cells, day,FF, dil_factor, sample_datetime) %>% 
+  summarise_at(.vars = names(.)[8:17],
+               .funs = c(mean="mean")) %>%
+  transform(day = as.numeric(day)) %>%
+  transform(dil_factor = as.numeric(dil_factor))
+ 
+
+
 ```
 
 
 
 
 ```{r}
-
-# Pick a flask
-
 # Plot for Events
-events <- ggplot(data_pico, aes(x = data_pico$julian_time, y = log(data_pico$`Picochlorum Events/μL(V)`)))+
+events <- ggplot(data_pico_mean, aes(x = data_pico_mean$sample_datetime, y = log(data_pico_mean$`Weighted Picochlorum Events/μL(V)_mean`)))+
   geom_smooth() +
-  geom_point(aes(color = lightORdark)) +
-  xlab("Time Since Start") +
-  ylab("Log(Events/μL)") + 
-  labs(col="Light \nCondition") +
-  theme_bw()+ 
-  theme(axis.text=element_text(size=28),
-        axis.title=element_text(size=28,face="bold"),
-        legend.title =element_text(size=28,face="bold"),
-        legend.text = element_text(size=28)) 
-events <- events + facet_wrap(~flask)
+  geom_point(aes(col=FF)) +
+  xlab("Sample DateTime") +
+  ylab("Log(Events/μL)") +
+#  scale_y_continuous(name= "Log(Events/μL)", limits = c(0,8)) +
+  theme_bw()+
+  scale_x_datetime(breaks = date_breaks("days"), labels = date_format("%b %d"))+ 
+  theme(axis.text.x = element_text(angle = 60, vjust = 0.5, hjust=1))
+  # theme(axis.text=element_text(size=28),
+  #       axis.title=element_text(size=28,face="bold"),
+  #       legend.title =element_text(size=28,face="bold"),
+  #       legend.text = element_text(size=28)) 
+events <- events + facet_wrap(~start_cells)
 
 # png("../report/img/Event_JT.png", width = 1000, height = 800)
 events
 # dev.off()
 
-
-
-for (letter in unique(data_pico$flask)) {
-  
-  FLASK<- filter(data_pico,flask == letter)
-
-# Plot for FSC
-FSC <- ggplot(FLASK, aes(x = FLASK$julian_time, y = FLASK$`Picochlorum Events/μL(V)`))+
-  geom_smooth(method = "lm") +
-  geom_point(aes(color = lightORdark)) +
-  xlab("Time since start") +
-  # ylab("FSC") + 
-  labs(col="Light \nCondition") +
-  theme_bw()+ 
-  theme(axis.text=element_text(size=28),
-        axis.title=element_text(size=28,face="bold"),
-        legend.title =element_text(size=28,face="bold"),
-        legend.text = element_text(size=28))
-
-# png("../report/img/Event_JT.png", width = 1000, height = 800)
-plots <- c(FSC,FSC)
-# dev.off()
-}
-plots[1]
-
-# Plot of multiple light regimes together 
-REGIME<-filter(data_pico,light_regime == "1608")
-regime_plot <- ggplot(REGIME, aes(x = REGIME$julian_time, y = REGIME$`Picochlorum Events/μL(V)`))+
-  geom_point(aes(color = lightORdark, shape = flask)) +
-  xlab("Time Since Start") +
-  ylab("FSC") + 
-  labs(col="Light \nCondition", shape = "Flask") +
-  theme_bw()+ 
-  theme(axis.text=element_text(size=28),
-        axis.title=element_text(size=28,face="bold"),
-        legend.title =element_text(size=28,face="bold"),
-        legend.text = element_text(size=28))
-regime_plot
-
-```
-
-
-
-```{r}
-# Comparing A and M samples
-# What kind of plot are you looking to make? 
-# Okay maybe not a plot but a comparison for how much it differs across time spent before tube change 
-
-data_pico_mean <- data_pico %>% 
-  group_by(flask, attempt,hour_index, FAhi, AorM,light_regime, julian_time,sample_datetime, sample_time, lightORdark, time_since_tube_change) %>% 
-  summarise_at(.vars = names(.)[13:22],
-               .funs = c(mean="mean"))
-
-# Keep only rows of FAhi where both A and M exist
-data_pico_mean_AM <- subset(data_pico_mean, FAhi %in% data_pico_mean[duplicated(data_pico_mean$FAhi),"FAhi"]$FAhi)
-
-# Compare differences in 
-
-data_pico_mean_AM_A <- filter(data_pico_mean_AM,AorM == "A")
-data_pico_mean_AM_M <- filter(data_pico_mean_AM,AorM == "M")
-data_pico_mean_AM_A_ratio <-data.frame(c(data_pico_mean_AM_A[1:11],data_pico_mean_AM_A[-c(1:11)]/data_pico_mean_AM_M[-c(1:11)]))
-
-preservation_plot <- ggplot(data_pico_mean_AM_A_ratio, aes(x = data_pico_mean_AM_A_ratio$time_since_tube_change, y = data_pico_mean_AM_A_ratio$Picochlorum.Median.PC5.5.A_mean))+
-  geom_point(aes(color = flask)) +
-  xlab("Time Since Tube Change") +
-#  ylab("FSC") + 
-  labs(col = "Flask") +
-  theme_bw()+ 
-  theme(axis.text=element_text(size=28),
-        axis.title=element_text(size=28,face="bold"),
-        legend.title =element_text(size=28,face="bold"),
-        legend.text = element_text(size=28))
-preservation_plot
+# Plot of comparison between FF and NFF
 
 
 ```
-
 
 
 
 
 ```{r}
 # Linear Model of Ln Events/ul
+# For 1000 cell start, exponential growth in first 7 days
+# For 10000 cell start, exponential growth in first 6 days
+
+exp_1000 <- filter(data_pico_mean, day <= 7, start_cells == 1000)
+exp_10000 <- filter(data_pico_mean, day <= 6, start_cells == 10000)
 
 ggplotRegression <- function (fit) {
-
 require(ggplot2)
-
 ggplot(fit$model, aes_string(x = names(fit$model)[2], y = names(fit$model)[1])) + 
   geom_point() +
   stat_smooth(method = "lm", col = "red") +
@@ -289,8 +211,18 @@ ggplot(fit$model, aes_string(x = names(fit$model)[2], y = names(fit$model)[1])) 
                      " P =",signif(summary(fit)$coef[2,4], 5)))
 }
 
-model = lm(log(FLASK$`Picochlorum Median FSC-A`)~ sample_time, data = FLASK)
+model = lm(log(exp_1000$Weighted.Picochlorum.Events.μL.V._mean)~ sample_datetime, data = exp_1000)
 ggplotRegression(model)
+
+# To find Growth Rate 
+
+growth_rate <- function (model){
+  (last(model$model[1][,1])-first(model$model[1][,1]))/as.numeric(last(model$model[2][,1])-first(model$model[2][,1]))
+}
+growth_data <- data.frame("r" = growth_rate(model), "k" = growth_rate(model)/log(2), "T2" = log(2)/growth_rate(model))
+
+
+# Conclusion is that starting with 1000 cells gives a higher growth rate AND has a longer exponential growth time as compared to starting with 10k cells. 
 
 
 ```
