@@ -16,7 +16,7 @@ output:
 ---
 
 
-```{r knitr_init, echo=FALSE, cache=FALSE}
+```{r knitr_init, echo=FALSE, cache=FALSE, warning=FALSE}
 library(knitr)
 library(rmdformats)
 
@@ -60,10 +60,21 @@ flaskdata <- flaskdata %>%
   dplyr::mutate(FA = paste(flask,attempt, sep = "")) %>%
   dplyr::mutate(light_on = format(make_datetime(hour = flaskdata$`light hour`, min = flaskdata$`light min`), format = "%H:%M:%S")) %>%
   dplyr::mutate(dark_on = format(make_datetime(hour = flaskdata$`dark hour`, min = flaskdata$`dark min`), format = "%H:%M:%S")) %>%
+  dplyr::mutate(light_on_datetime_1 = format(make_datetime(flaskdata$`sample year`,flaskdata$`culture month`,flaskdata$`sample day`,flaskdata$`light hour`, flaskdata$`light min`))) %>%
+  dplyr::mutate(dark_on_datetime_1 = format(make_datetime(flaskdata$`sample year`,flaskdata$`culture month`,flaskdata$`sample day`,flaskdata$`dark hour`, flaskdata$`dark min`))) %>%
+  dplyr::mutate(light_on_datetime_2 = format(make_datetime(flaskdata$`sample year`,flaskdata$`culture month`,flaskdata$`sample day`+1,flaskdata$`light hour`, flaskdata$`light min`))) %>%
+  dplyr::mutate(dark_on_datetime_2 = format(make_datetime(flaskdata$`sample year`,flaskdata$`culture month`,flaskdata$`sample day`+1,flaskdata$`dark hour`, flaskdata$`dark min`))) %>%
   dplyr::mutate(datetime_1_tube_change= make_datetime(flaskdata$`1 tube change year`,flaskdata$`1 tube change month`,flaskdata$`1 tube change day`,flaskdata$`1 tube change hour`,flaskdata$`1 tube change min`))  %>% 
   dplyr::mutate(datetime_2_tube_change= make_datetime(flaskdata$`2 tube change year`,flaskdata$`2 tube change month`,flaskdata$`2 tube change day`,flaskdata$`2 tube change hour`,flaskdata$`2 tube change min`))  %>% 
   dplyr::mutate(datetime_3_tube_change= make_datetime(flaskdata$`3 tube change year`,flaskdata$`3 tube change month`,flaskdata$`3 tube change day`,flaskdata$`3 tube change hour`,flaskdata$`3 tube change min`))  %>%
   dplyr::mutate(datetime_4_tube_change= make_datetime(flaskdata$`4 tube change year`,flaskdata$`4 tube change month`,flaskdata$`4 tube change day`,flaskdata$`4 tube change hour`,flaskdata$`4 tube change min`)) 
+
+# Read the Temperature Data
+myfiles = list.files(path="../data/metadata/GEEK temp sensor1615178083103_export", pattern="*.csv", full.names=TRUE)
+data_all <- lapply(myfiles, read_csv)
+tempdata <- do.call(rbind, data_all)
+
+
 
 ## Read the data
 
@@ -165,6 +176,7 @@ for (row in 1:nrow(data)) {
     }
   }
 else {time_tube_change <- 0}
+  
 # divide by 3600 because POSIXct as.numeric is in seconds. So final is hours since tube change. 
 time_since_tube_change <- rbind(time_since_tube_change, time_tube_change/3600)
 }
@@ -172,61 +184,196 @@ names(time_since_tube_change)[1] <- "time_since_tube_change"
 data<- cbind(data, time_since_tube_change)
 
 
+# Add in temp and humidity data from Govee recording device
+colnames(tempdata) <- c("sample_datetime", "Temperature", "Humidity")
+data <- right_join(data,tempdata, by = "sample_datetime")
+
+## An Explanation of variables: 
+# Geom. Mean—The geometric mean. Can be a more applicable metric for a log-normal distribution. It is always less than or equal to the arithmetic mean.
+# Robust Standard Deviation—68.26% of the events around the Median are used for this calculation, and an upper and lower range set.  The robust standard deviation is equal to (upper range + lower range) /2.  If the upper range is off scale, the robust standard deviation is equal to the lower range, and vice versa when the lower range is off scale and the robust standard deviation is the upper range.  The robust standard deviation is not as skewed by outlying values as the Standard Deviation.
+# Robust CV—Equals 100 * 1/2( Intensity[at 84.13 percentile] – Intensity [at 15.87 percentile] ) / Median. The robust CV is not as skewed by outlying values as the CV.
+
+
 # Extract the more useful data
 data_pico <- data %>%
-  select(`flask`,attempt, hour_index, FAhi, AorM, repli,light_regime,julian_time,sample_datetime, sample_time,lightORdark,time_since_tube_change,`Picochlorum Events`,`Picochlorum Events/μL(V)`, `Picochlorum Median FSC-A`, `Picochlorum SD FSC-A`, `Picochlorum Median SSC-A`, `Picochlorum SD SSC-A`, `Picochlorum Median PC5.5-A`, `Picochlorum SD PC5.5-A`, `Picochlorum Median PE-A`, `Picochlorum SD PE-A`)
+  select(`flask`,attempt, hour_index, FAhi, AorM, repli,light_regime,julian_time,sample_datetime, sample_time,lightORdark,time_since_tube_change,Temperature,Humidity,`Picochlorum Events`,`Picochlorum Events/μL(V)`, `Picochlorum Median FSC-A`, `Picochlorum SD FSC-A`, `Picochlorum Median SSC-A`, `Picochlorum SD SSC-A`, `Picochlorum Median PC5.5-A`, `Picochlorum SD PC5.5-A`, `Picochlorum Median PE-A`, `Picochlorum SD PE-A`)
+
 ```
 
 
+```{r}
+## Plot for all flasks with temperature
+get_plot_limits <- function(plot) {
+    gb = ggplot_build(plot)
+    xmin = gb$layout$panel_params[[1]]$x.range[1]
+    xmax = gb$layout$panel_params[[1]]$x.range[2]
+    ymin = gb$layout$panel_params[[1]]$y.range[1]
+    ymax = gb$layout$panel_params[[1]]$y.range[2]
+    list(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax)
+}
+
+FLASK<- filter(data_pico,flask == "E")
+events <- ggplot(FLASK, aes(x = FLASK$sample_datetime, y = FLASK$`Picochlorum Events/μL(V)`))+ 
+    scale_y_continuous(trans = log10_trans(), sec.axis = sec_axis(~./4, name = "Temperature"))
+plot_limits<-get_plot_limits(events)
+events <- events + annotate(geom = "rect", 
+                            xmin=as_datetime(filter(flaskdata, flask =="E")$dark_on_datetime_1),
+                            xmax=as_datetime(filter(flaskdata, flask =="E")$light_on_datetime_2), 
+                            ymin=10^plot_limits[[3]], 
+                            ymax=10^plot_limits[[4]], alpha= 0.5, fill = "black") +
+  geom_point(aes(color = flask)) +
+  # geom_line(aes(y = Temperature*4, colour = "Temperature")) +
+  xlab("Sample Date Time") +
+  ylab("Log(Events/μL)") + 
+  ggtitle("All Flasks Picochlorum Events/μL")
+  labs(col="Light \nCondition") +
+  theme_bw()+ 
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        legend.title =element_text(size=12,face="bold"),
+        legend.text = element_text(size=12),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  #png(file.path("../report/img","Events_Facet_Wrap.png"), width = 800, height = 600)
+  print(events)
+  #dev.off()  
+
+```
 
 
 ```{r}
+## Plot for Events
 
-# Pick a flask
-
-# Plot for Events
+# Facet wrap plot of all Flasks together
 events <- ggplot(data_pico, aes(x = data_pico$julian_time, y = log(data_pico$`Picochlorum Events/μL(V)`)))+
   geom_smooth() +
   geom_point(aes(color = lightORdark)) +
   xlab("Time Since Start") +
   ylab("Log(Events/μL)") + 
+  ggtitle("All Flasks Picochlorum Events/μL")
   labs(col="Light \nCondition") +
   theme_bw()+ 
-  theme(axis.text=element_text(size=28),
-        axis.title=element_text(size=28,face="bold"),
-        legend.title =element_text(size=28,face="bold"),
-        legend.text = element_text(size=28)) 
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        legend.title =element_text(size=12,face="bold"),
+        legend.text = element_text(size=12)) 
 events <- events + facet_wrap(~flask)
-
-# png("../report/img/Event_JT.png", width = 1000, height = 800)
-events
-# dev.off()
-
+  png(file.path("../report/img","Events_Facet_Wrap.png"), width = 800, height = 600)
+  print(events)
+  dev.off()  
 
 
+# Plot for Events/μL
 for (letter in unique(data_pico$flask)) {
-  
   FLASK<- filter(data_pico,flask == letter)
+events <- ggplot(FLASK, aes(x = FLASK$julian_time, y = FLASK$`Picochlorum Events/μL(V)`))+
+    geom_point(aes(color = lightORdark)) +
+    xlab("Time since start") +
+    ylab("Median Events/μL") + 
+    labs(col="Light \nCondition") +
+    theme_bw() +
+    ggtitle(paste("Flask", letter)) + 
+    theme(plot.title = element_text(size = 28, face = "bold"),
+          axis.text=element_text(size=20),
+          axis.title=element_text(size=20,face="bold"),
+          legend.title =element_text(size=20,face="bold"),
+          legend.text = element_text(size=20)) 
+    # Create and store plots in img folder
+  dev.new()
+    png(file.path("../report/img",paste("Events", letter, ".png", sep="_")), width = 800, height = 600)
+  print(events)
+  dev.off()  
+}
+  
+# Plot for log(Events)/μL
+for (letter in unique(data_pico$flask)) {
+  FLASK<- filter(data_pico,flask == letter)
+events <- ggplot(FLASK, aes(x = FLASK$julian_time, y = log(FLASK$`Picochlorum Events/μL(V)`)))+
+    geom_point(aes(color = lightORdark)) +
+    xlab("Time since start") +
+    ylab("Log(Median Events)/μL") + 
+    labs(col="Light \nCondition") +
+    theme_bw() +
+    ggtitle(paste("Flask", letter)) + 
+    theme(plot.title = element_text(size = 28, face = "bold"),
+          axis.text=element_text(size=20),
+          axis.title=element_text(size=20,face="bold"),
+          legend.title =element_text(size=20,face="bold"),
+          legend.text = element_text(size=20)) 
+    # Create and store plots in img folder
+  dev.new()
+    png(file.path("../report/img",paste("Events_log", letter, ".png", sep="_")), width = 800, height = 600)
+  print(events)
+  dev.off()  
+}
 
 # Plot for FSC
-FSC <- ggplot(FLASK, aes(x = FLASK$julian_time, y = FLASK$`Picochlorum Events/μL(V)`))+
-  geom_smooth(method = "lm") +
-  geom_point(aes(color = lightORdark)) +
-  xlab("Time since start") +
-  # ylab("FSC") + 
-  labs(col="Light \nCondition") +
-  theme_bw()+ 
-  theme(axis.text=element_text(size=28),
-        axis.title=element_text(size=28,face="bold"),
-        legend.title =element_text(size=28,face="bold"),
-        legend.text = element_text(size=28))
-
-# png("../report/img/Event_JT.png", width = 1000, height = 800)
-plots <- c(FSC,FSC)
-# dev.off()
+for (letter in unique(data_pico$flask)) {
+  FLASK<- filter(data_pico,flask == letter)
+  FSC <- ggplot(FLASK, aes(x = FLASK$julian_time, y = FLASK$`Picochlorum Median FSC-A`))+
+    geom_point(aes(color = lightORdark)) +
+    xlab("Time since start") +
+    ylab("Median FSC") + 
+    labs(col="Light \nCondition") +
+    theme_bw() +
+    ggtitle(paste("Flask", letter)) + 
+    theme(plot.title = element_text(size = 28, face = "bold"),
+          axis.text=element_text(size=20),
+          axis.title=element_text(size=20,face="bold"),
+          legend.title =element_text(size=20,face="bold"),
+          legend.text = element_text(size=20)) 
+    # Create and store plots in img folder
+  dev.new()
+    png(file.path("../report/img",paste("FSC", letter, ".png", sep="_")), width = 800, height = 600)
+  print(FSC)
+  dev.off()
 }
-plots[1]
 
+# Plot for SSC
+for (letter in unique(data_pico$flask)) {
+  FLASK<- filter(data_pico,flask == letter)
+SSC <- ggplot(FLASK, aes(x = FLASK$julian_time, y = FLASK$`Picochlorum Median SSC-A`))+
+    geom_point(aes(color = lightORdark)) +
+    xlab("Time since start") +
+    ylab("Median SSC") + 
+    labs(col="Light \nCondition") +
+    theme_bw() +
+    ggtitle(paste("Flask", letter)) + 
+    theme(plot.title = element_text(size = 28, face = "bold"),
+          axis.text=element_text(size=20),
+          axis.title=element_text(size=20,face="bold"),
+          legend.title =element_text(size=20,face="bold"),
+          legend.text = element_text(size=20)) 
+    # Create and store plots in img folder
+  dev.new()
+    png(file.path("../report/img",paste("SSC", letter, ".png", sep="_")), width = 800, height = 600)
+  print(SSC)
+  dev.off()  
+}
+
+# Plot for CHL-A 
+for (letter in unique(data_pico$flask)) {
+  FLASK<- filter(data_pico,flask == letter)
+PC5.5 <- ggplot(FLASK, aes(x = FLASK$julian_time, y = FLASK$`Picochlorum Median PC5.5-A`))+
+    geom_point(aes(color = lightORdark)) +
+    xlab("Time since start") +
+    ylab("Median PC5.5") + 
+    labs(col="Light \nCondition") +
+    theme_bw() +
+    ggtitle(paste("Flask", letter)) + 
+    theme(plot.title = element_text(size = 28, face = "bold"),
+          axis.text=element_text(size=20),
+          axis.title=element_text(size=20,face="bold"),
+          legend.title =element_text(size=20,face="bold"),
+          legend.text = element_text(size=20)) 
+    # Create and store plots in img folder
+  dev.new()
+    png(file.path("../report/img",paste("PC5.5", letter, ".png", sep="_")), width = 800, height = 600)
+  print(PC5.5)
+  dev.off()    
+}
+
+
+## Find out how to normalise this! Use the other columns in your analysis
 # Plot of multiple light regimes together 
 REGIME<-filter(data_pico,light_regime == "1608")
 regime_plot <- ggplot(REGIME, aes(x = REGIME$julian_time, y = REGIME$`Picochlorum Events/μL(V)`))+
@@ -241,6 +388,10 @@ regime_plot <- ggplot(REGIME, aes(x = REGIME$julian_time, y = REGIME$`Picochloru
         legend.text = element_text(size=28))
 regime_plot
 
+
+# This is to clear the device list (dev.list()) 
+graphics.off()
+
 ```
 
 
@@ -252,7 +403,7 @@ regime_plot
 
 data_pico_mean <- data_pico %>% 
   group_by(flask, attempt,hour_index, FAhi, AorM,light_regime, julian_time,sample_datetime, sample_time, lightORdark, time_since_tube_change) %>% 
-  summarise_at(.vars = names(.)[13:22],
+  summarise_at(.vars = names(.)[13:24],
                .funs = c(mean="mean"))
 
 # Keep only rows of FAhi where both A and M exist
@@ -264,16 +415,12 @@ data_pico_mean_AM_A <- filter(data_pico_mean_AM,AorM == "A")
 data_pico_mean_AM_M <- filter(data_pico_mean_AM,AorM == "M")
 data_pico_mean_AM_A_ratio <-data.frame(c(data_pico_mean_AM_A[1:11],data_pico_mean_AM_A[-c(1:11)]/data_pico_mean_AM_M[-c(1:11)]))
 
-preservation_plot <- ggplot(data_pico_mean_AM_A_ratio, aes(x = data_pico_mean_AM_A_ratio$time_since_tube_change, y = data_pico_mean_AM_A_ratio$Picochlorum.Median.PC5.5.A_mean))+
+preservation_plot <- ggplot(data_pico_mean_AM_A_ratio, aes(x = data_pico_mean_AM_A_ratio$time_since_tube_change, y = data_pico_mean_AM_A_ratio$Picochlorum.Events.μL.V._mean))+
   geom_point(aes(color = flask)) +
   xlab("Time Since Tube Change") +
 #  ylab("FSC") + 
   labs(col = "Flask") +
-  theme_bw()+ 
-  theme(axis.text=element_text(size=28),
-        axis.title=element_text(size=28,face="bold"),
-        legend.title =element_text(size=28,face="bold"),
-        legend.text = element_text(size=28))
+  theme_bw()
 preservation_plot
 
 
@@ -284,23 +431,136 @@ preservation_plot
 
 
 ```{r}
-# Linear Model of Ln Events/ul
+# Linear Model of Ln Events/ul to get growth rates etc 
 
+# Create function to generate regression plot 
 ggplotRegression <- function (fit) {
-
 require(ggplot2)
-
-ggplot(fit$model, aes_string(x = names(fit$model)[2], y = names(fit$model)[1])) + 
+ggplot(fit$model, aes(x = fit$model[,2], y = fit$model[,1])) + 
   geom_point() +
   stat_smooth(method = "lm", col = "red") +
+  xlab(names(model$model[2]))+ 
+  ylab(names(model$model[1])) +
   labs(title = paste("Adj R2 = ",signif(summary(fit)$adj.r.squared, 5),
                      "Intercept =",signif(fit$coef[[1]],5 ),
                      " Slope =",signif(fit$coef[[2]], 5),
-                     " P =",signif(summary(fit)$coef[2,4], 5)))
+                     " P =",signif(summary(fit)$coef[2,4], 5))) +
+  theme_bw()
 }
 
-model = lm(log(FLASK$`Picochlorum Median FSC-A`)~ sample_time, data = FLASK)
-ggplotRegression(model)
+# Create function to capture and calculate growth rate data
+growth_rate <- function (model){
+  # Use fitted.values so that you are taking the slope of the linear model and not calculating growth rates based on 1st and last points alone! 
+  (last(model$fitted.values)-first(model$fitted.values))/as.numeric(last(model$model[2][,1])-first(model$model[2][,1]))
+}
 
+# Plot and store growth rate data
+growth_data <- data.frame()
+plot_list = list()
+
+for (letter in 1:as.numeric(tally(plyr::count(unique(data_pico_mean$flask))))) {
+  FLASK <- filter(data_pico_mean, flask == unique(data_pico_mean$flask)[letter])
+  # Plot model for each flask
+  model = lm(log(FLASK$`Picochlorum Events/μL(V)_mean`)~ sample_datetime, data = FLASK)
+  # Create File path and name for each plot generated
+  file_name <- file.path("../report/img",paste("linear_model_flask_", unique(data_pico_mean$flask)[letter], ".png", sep=""))
+  # Store all models in a list
+  plot_list[[letter]] = model
+  # Create plot and add title 
+  p <- ggplotRegression(model) + ggtitle(paste("Flask", unique(data_pico_mean$flask)[letter]))
+  # Print and store all ggplotRegression plots 
+  dev.new()
+  png(file.path("../report/img",paste("linear_model_flask_", unique(data_pico_mean$flask)[letter], ".png", sep="")), width = 800, height = 600)
+  print(p)
+  dev.off()
+  # Store all growth rate data in a df 
+  growth <- c("r" = growth_rate(model), "k" = growth_rate(model)/log(2), "T2" = log(2)/growth_rate(model))
+  growth_data <- rbind(growth_data, growth)
+}
+colnames(growth_data) <- c("r", "k", "T2")
+row.names(growth_data) <- unique(data_pico_mean$flask)
+
+# This is to clear the device list (dev.list()) 
+graphics.off()
 
 ```
+
+```{r}
+
+## Plot instantaneous growth rate against time and then find area under the curve to get average growth rate over period or average mortality rate over period 
+
+# Using stat_smooth to get modeled curve 
+
+
+FLASK<- filter(data_pico,flask == "E")
+
+events <- ggplot(FLASK, aes(x = FLASK$sample_datetime, y = FLASK$`Picochlorum Events/μL(V)`))+
+  geom_point(aes(color = lightORdark)) +
+  stat_smooth() + 
+  xlab("Time since start") +
+  ylab("Median Events/μL") + 
+  labs(col="Light \nCondition") +
+  theme_bw() +
+  ggtitle(paste("Flask", "E")) + 
+  theme(plot.title = element_text(size = 28, face = "bold"),
+        axis.text=element_text(size=20),
+        axis.title=element_text(size=20,face="bold"),
+        legend.title =element_text(size=20,face="bold"),
+        legend.text = element_text(size=20)) 
+
+print(events)
+sup <- ggplot_build(events)
+sup$data[[2]]
+  
+
+# Trying out pspline package to get nonparametric derivative estimations 
+library("pspline")
+
+FLASK <- filter(data_pico_mean, flask == "E",AorM == "A")
+pspl <- smooth.Pspline(FLASK$julian_time, FLASK$`Picochlorum Events/μL(V)_mean`, method = 4)
+f0 <- predict(pspl, FLASK$julian_time, nderiv=0)
+plot(pspl)
+lines(FLASK$julian_time, f0, lwd=3, lty=2, col="red")
+f1 <- predict(pspl, FLASK$julian_time, nderiv=1)
+plot(f1)
+lines(FLASK$julian_time, f1, lwd=3, lty=2, col="red")
+  
+# Gets a little confusing so lets try with ggplot using the splines package
+# Also super confusing 
+
+# Another package called npregfast seems possible but is too complicated for me :(
+
+
+# Try to use lm to fit a model from sin and cos curves 
+  # The datetime format is a problem
+evnts <- FLASK$`Picochlorum Events/μL(V)`
+timee <- FLASK$sample_datetime
+
+model_test <- lm(evnts~sin(as.numeric(timee)/2345))
+summary(model_test)
+
+model <- loess(evnts~as.numeric(timee))
+
+
+tcos<-cos(2*pi*(as.numeric(timee))/1234)
+tsin<-sin(2*pi*(as.numeric(timee))/1234)
+model <-lm(evnts~tcos + tsin)
+summary(model)
+
+model1 <- lm(y~ x + I(sin(2*pi*x/360)))
+summary(model1)
+
+model2 <- lm(y~ x + I(sin(2*pi*x/360))+I(cos...))
+summary(model2)
+# Derivative of this curve is formula for instantaneous growth rate for time (t)
+
+# Integral of the new growth rate curve below line and above axis is growing and below axis and above line is dying
+
+```
+
+
+
+
+
+
+

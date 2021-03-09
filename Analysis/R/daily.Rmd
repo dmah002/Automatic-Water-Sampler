@@ -165,7 +165,8 @@ data_pico_mean <- data_pico_no0_Rdil %>%
 
 ```{r}
 # Plot for Events
-events <- ggplot(data_pico_mean, aes(x = data_pico_mean$sample_datetime, y = log(data_pico_mean$`Weighted Picochlorum Events/μL(V)_mean`)))+
+
+events <- ggplot(data_pico_mean, aes(x = data_pico_mean$sample_datetime, y = log(data_pico_mean$Weighted.Picochlorum.Events.μL.V._mean)))+
   geom_smooth() +
   geom_point(aes(col=FF)) +
   xlab("Sample DateTime") +
@@ -217,12 +218,15 @@ ggplotRegression(model)
 # To find Growth Rate 
 
 growth_rate <- function (model){
-  (last(model$model[1][,1])-first(model$model[1][,1]))/as.numeric(last(model$model[2][,1])-first(model$model[2][,1]))
+  (last(model$fitted.values)-first(model$fitted.values))/as.numeric(last(model$model[2][,1])-first(model$model[2][,1]))
 }
 growth_data <- data.frame("r" = growth_rate(model), "k" = growth_rate(model)/log(2), "T2" = log(2)/growth_rate(model))
 
 
 # Conclusion is that starting with 1000 cells gives a higher growth rate AND has a longer exponential growth time as compared to starting with 10k cells. 
+
+
+
 
 
 ```
