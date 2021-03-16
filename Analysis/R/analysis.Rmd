@@ -47,6 +47,9 @@ library("tidyr")
 library("pspline")
 library("npregfast")
 library("ggpmisc")
+library(mgcv)
+library(scales)
+library(grid)
 
 # This is to clear the device list (dev.list()) 
 graphics.off()
@@ -66,14 +69,18 @@ flaskdata <- flaskdata %>%
   dplyr::mutate(FA = paste(flask,attempt, sep = "")) %>%
   dplyr::mutate(light_on = format(make_datetime(hour = flaskdata$`light hour`, min = flaskdata$`light min`), format = "%H:%M:%S")) %>%
   dplyr::mutate(dark_on = format(make_datetime(hour = flaskdata$`dark hour`, min = flaskdata$`dark min`), format = "%H:%M:%S")) %>%
-  dplyr::mutate(light_on_datetime_1 = format(make_datetime(flaskdata$`sample year`,flaskdata$`culture month`,flaskdata$`sample day`,flaskdata$`light hour`, flaskdata$`light min`))) %>%
-  dplyr::mutate(dark_on_datetime_1 = format(make_datetime(flaskdata$`sample year`,flaskdata$`culture month`,flaskdata$`sample day`,flaskdata$`dark hour`, flaskdata$`dark min`))) %>%
-  dplyr::mutate(light_on_datetime_2 = format(make_datetime(flaskdata$`sample year`,flaskdata$`culture month`,flaskdata$`sample day`+1,flaskdata$`light hour`, flaskdata$`light min`))) %>%
-  dplyr::mutate(dark_on_datetime_2 = format(make_datetime(flaskdata$`sample year`,flaskdata$`culture month`,flaskdata$`sample day`+1,flaskdata$`dark hour`, flaskdata$`dark min`))) %>%
+  dplyr::mutate(light_on_datetime_1 = make_datetime(flaskdata$`sample year`,flaskdata$`sample month`,flaskdata$`sample day`,flaskdata$`light hour`, flaskdata$`light min`)) %>%
+  dplyr::mutate(dark_on_datetime_1 = make_datetime(flaskdata$`sample year`,flaskdata$`sample month`,flaskdata$`sample day`,flaskdata$`dark hour`, flaskdata$`dark min`)) %>%
+  dplyr::mutate(light_on_datetime_2 = make_datetime(flaskdata$`sample year`,flaskdata$`sample month`,flaskdata$`sample day`+1,flaskdata$`light hour`, flaskdata$`light min`)) %>%
+  dplyr::mutate(dark_on_datetime_2 = make_datetime(flaskdata$`sample year`,flaskdata$`sample month`,flaskdata$`sample day`+1,flaskdata$`dark hour`, flaskdata$`dark min`)) %>%
   dplyr::mutate(datetime_1_tube_change= make_datetime(flaskdata$`1 tube change year`,flaskdata$`1 tube change month`,flaskdata$`1 tube change day`,flaskdata$`1 tube change hour`,flaskdata$`1 tube change min`))  %>% 
   dplyr::mutate(datetime_2_tube_change= make_datetime(flaskdata$`2 tube change year`,flaskdata$`2 tube change month`,flaskdata$`2 tube change day`,flaskdata$`2 tube change hour`,flaskdata$`2 tube change min`))  %>% 
   dplyr::mutate(datetime_3_tube_change= make_datetime(flaskdata$`3 tube change year`,flaskdata$`3 tube change month`,flaskdata$`3 tube change day`,flaskdata$`3 tube change hour`,flaskdata$`3 tube change min`))  %>%
-  dplyr::mutate(datetime_4_tube_change= make_datetime(flaskdata$`4 tube change year`,flaskdata$`4 tube change month`,flaskdata$`4 tube change day`,flaskdata$`4 tube change hour`,flaskdata$`4 tube change min`)) 
+  dplyr::mutate(datetime_4_tube_change= make_datetime(flaskdata$`4 tube change year`,flaskdata$`4 tube change month`,flaskdata$`4 tube change day`,flaskdata$`4 tube change hour`,flaskdata$`4 tube change min`))
+
+flaskdata <- flaskdata %>%
+  mutate(dark1_since_light1 = time_length(flaskdata$dark_on_datetime_1 - flaskdata$light_on_datetime_1, unit="hour")) %>%
+  mutate(light2_since_light1 = time_length(flaskdata$light_on_datetime_2 - flaskdata$light_on_datetime_1, unit="hour"))
 
 # Read the Temperature Data
 myfiles = list.files(path="../data/metadata/GEEK temp sensor1615178083103_export", pattern="*.csv", full.names=TRUE)
@@ -129,12 +136,16 @@ data <- data %>%
   dplyr::mutate(sample_time = format(sample_datetime, format = "%H:%M:%S"))
 # data$sample_time <- strptime(data$sample_time,format="%H:%M")
 
-# Loop through data to add "Light" or "Dark" as a another variable in the last column 
+# Loop through data to add hour since light on and "Light" or "Dark" as a another variable in the last column 
 lightORdark <- data.frame()
 LorD<- ""
+hr_since_light <- data.frame()
+hr_since_light_var <- ""
 # Check if it is light or dark
 for (row in 1:nrow(data)){
 index <- match(data[row,"FA"],flaskdata$FA)
+hr_since_light_var <- time_length(data[row,"sample_datetime"]- flaskdata[[index,"light_on_datetime_1"]], unit="hour")
+hr_since_light <- rbind(hr_since_light, data.frame(hr_since_light_var))
 # A, B, E, F have dark cycles ending after midnight. The rest of the samples cycles should end before midnight. 
 if(data[row,"flask"] == "A" | data[row,"flask"] == "B" |data[row,"flask"] == "E"|data[row,"flask"] == "F"){
   ifelse(data[row,"sample_time"] >= flaskdata[index,"dark_on"] & data[row,"sample_time"] <= flaskdata[index,"light_on"], LorD <- "dark", LorD <- "light")
@@ -144,9 +155,9 @@ else {
   }
 lightORdark <- rbind(lightORdark, data.frame(LorD))
 }
+names(hr_since_light)[1] <- "hr_since_light"
 names(lightORdark)[1] <- "lightORdark"
-data<- cbind(data, lightORdark)
-
+data<- cbind(data, hr_since_light, lightORdark)
 
 
 # Loop through data and compare sampling times with the tube change data to determine how long it has been sitting in the sampler for
@@ -198,10 +209,9 @@ data<- cbind(data, time_since_tube_change)
 # Robust Standard Deviation—68.26% of the events around the Median are used for this calculation, and an upper and lower range set.  The robust standard deviation is equal to (upper range + lower range) /2.  If the upper range is off scale, the robust standard deviation is equal to the lower range, and vice versa when the lower range is off scale and the robust standard deviation is the upper range.  The robust standard deviation is not as skewed by outlying values as the Standard Deviation.
 # Robust CV—Equals 100 * 1/2( Intensity[at 84.13 percentile] – Intensity [at 15.87 percentile] ) / Median. The robust CV is not as skewed by outlying values as the CV.
 
-
 # Extract the more useful data
 d_ss <- data %>%
-  select(`flask`,attempt, hour_index, FAhi, AorM, repli,light_regime,julian_time,sample_datetime, sample_time,lightORdark,time_since_tube_change,`Picochlorum Events/μL(V)`, `Picochlorum Median FSC-A`, `Picochlorum Median SSC-A`, `Picochlorum Median PC5.5-A`)
+  select(`flask`,attempt, hour_index, hr_since_light, FAhi, AorM, repli,light_regime,julian_time,sample_datetime, sample_time,lightORdark,time_since_tube_change,`Picochlorum Events/μL(V)`, `Picochlorum Median FSC-A`, `Picochlorum Median SSC-A`, `Picochlorum Median PC5.5-A`)
 
 ```
 
@@ -415,8 +425,8 @@ regime_plot
 
 # group_by selects all the descriptive columns so that the function later on applied through summarise_at will not affect it. 
 d_ss_mean <- d_ss %>% 
-  group_by(flask, attempt,hour_index, FAhi, AorM,light_regime, julian_time,sample_datetime, sample_time, lightORdark, time_since_tube_change) %>% 
-  summarise_at(.vars = names(.)[13:16],
+  group_by(flask, attempt,hour_index, hr_since_light, FAhi, AorM,light_regime, julian_time,sample_datetime, sample_time, lightORdark, time_since_tube_change) %>% 
+  summarise_at(.vars = names(.)[14:17],
                .funs = c(mean="mean"))
 
 # Keep only rows of FAhi where both A and M exist
@@ -425,7 +435,7 @@ d_ss_mean_AM <- subset(d_ss_mean, FAhi %in% d_ss_mean[duplicated(d_ss_mean$FAhi)
 # Compare differences in 
 d_ss_mean_AM_A <- filter(d_ss_mean_AM,AorM == "A")
 d_ss_mean_AM_M <- filter(d_ss_mean_AM,AorM == "M")
-d_ss_mean_AM_A_ratio <-data.frame(c(d_ss_mean_AM_A[1:11],d_ss_mean_AM_A[-c(1:11)]/d_ss_mean_AM_M[-c(1:11)]))
+d_ss_mean_AM_A_ratio <-data.frame(c(d_ss_mean_AM_A[1:12],d_ss_mean_AM_A[-c(1:12)]/d_ss_mean_AM_M[-c(1:12)]))
 
 preservation_plot <- ggplot(d_ss_mean_AM_A_ratio, aes(x = time_since_tube_change, y = Picochlorum.Events.μL.V._mean))+
   geom_point(aes(color = flask)) +
@@ -437,6 +447,8 @@ preservation_plot
 
 
 ```
+
+
 ```{r}
 # Derivatives of events/ul graph to determine instantaneous growth rates!! 
 # Trying out npregfast package to get nonparametric derivative estimations 
@@ -444,11 +456,11 @@ preservation_plot
 # # Test flask use E 
 # d_ss_mean <- d_ss_mean %>% transform(hour_index = as.numeric(hour_index))
 # 
-# FLASK <- filter(d_ss_mean, flask == "E")
+# FLASK <- filter(d_ss_mean, flask == "B")
 # FLASK2 <- filter(d_ss_mean, flask == "F")
-# # Plot of actual plus derivative!!! 
-# fit <- frfast(`Picochlorum.Events.μL.V._mean`~ hour_index, data = FLASK)
-# fit2 <- frfast(`Picochlorum.Events.μL.V._mean`~ hour_index, data = FLASK2)
+# # Plot of actual plus derivative!!!
+# fit <- frfast(`Picochlorum Events/μL(V)_mean`~ hour_index, data = FLASK)
+# fit2 <- frfast(`Picochlorum Events/μL(V)_mean`~ hour_index, data = FLASK2)
 # autoplot(fit) + theme_bw()
 # autoplot(fit, der = 1) + theme_bw()
 # autoplot(fit2, der = 1) + theme_bw()
@@ -462,25 +474,168 @@ preservation_plot
 # 
 # what <- data.frame(cbind(der = c("Estimation","First_der", "Second_der"), rbind(critical(fit)[[1]], critical(fit)[[2]], critical(fit)[[3]])))
 
-# Now make it into a loop and generate a plot for each 
-crit_pts <- data.frame()
+# Create function to get plot limits of a ggplot (for creation of grey box)
+get_plot_limits <- function(plot) {
+    gb = ggplot_build(plot)
+    xmin = gb$layout$panel_params[[1]]$x.range[1]
+    xmax = gb$layout$panel_params[[1]]$x.range[2]
+    ymin = gb$layout$panel_params[[1]]$y.range[1]
+    ymax = gb$layout$panel_params[[1]]$y.range[2]
+    list(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax)
+    }
+
+# Create function to emulate ggplot colour scheme: 
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+  }
+
+# Create a function for the transformation of the y-axis for the derivative. This is to label the growth rate in d^-1. 
+hr2day <- function (x) { scales::label_number(accuracy = 0.001,
+                                       scale = 1/24,
+                                       big.mark = ",")(x) }
+# Tried to create my own axis transformation. Due to the nature of autoplot, it did not work :( 
+# hr2day_trans <- trans_new(name = "h2d", 
+#                                     transform = function(x) x/24,
+#                                     inverse = function(x) x*24)
+
+# This line gets the y values for the 1st der 
+# range(autoplot(fit2, der = 1)[["layers"]][[2]][["data"]][["p"]])
+
+# For Events data 
+crit_pts_all <- data.frame()
+all_der_plots <- list()
 for (letter in unique(d_ss_mean$flask)) {
-  FLASK<- filter(d_ss_mean,flask == letter)
-  fit <- frfast(`Picochlorum Events/μL(V)_mean`~ hour_index, data = FLASK)
-  ders <- lapply(0:2, function(x) autoplot(fit, der = x,col = "red", pcol = "black", lwd = 0.5)+
-                   theme_bw()+
-                   ggtitle(paste("Flask", letter)) +
-                   scale_x_continuous(breaks=seq(0,28,1)))
-  # Create and store plots in img folder
+  # Mask out the first and last few points from the dataset 
+  FLASK <- d_ss_mean %>% 
+  filter(flask == letter, hr_since_light >=2 & hr_since_light <= 23) %>%
+  rename(events = `Picochlorum Events/μL(V)_mean`)
+  # Use npregfast::frfast to get the fit data 
+  fit <- frfast(events~ hr_since_light, data = FLASK, p=2,h0=0.16, rank1 =9, ranku= 17, kbin = 300)
+  # Extract Critical points data 
+  crit_pts <-data.frame(matrix(unlist(critical(fit)), nrow=length(critical(fit)), byrow=TRUE)) %>%
+  mutate(der = c("Estimation","First_der","Second_der")) %>%
+  mutate(flask = rep(letter, 3)) %>%
+  rename(Critical = X1,
+         Lwr = X2,
+         Upr = X3) 
+  
+  # Store ALL crit pt data
+  crit_pts_all <- rbind(crit_pts_all, crit_pts)
+
+  # Create plots
+  est_plot <- autoplot(fit) + 
+    geom_vline(xintercept = crit_pts[2,1], col = "red") +
+    scale_x_continuous(breaks = breaks_width(2, 0)) + 
+    ggtitle(paste("Flask",letter, sep = " ")) + 
+    labs(x = 'Hours Since Start')
+  
+  plot_limits <-get_plot_limits(est_plot)
+  est_plot <- est_plot + annotate(geom = "rect", 
+                            xmin=filter(flaskdata, flask ==letter)$dark1_since_light1,
+                            xmax=filter(flaskdata, flask ==letter)$light2_since_light1, 
+                            ymin=plot_limits[[3]], 
+                            ymax=plot_limits[[4]], alpha= 0.3, fill = "black")
+  
+  der1_plot <- autoplot(fit, der = 1) + 
+    geom_vline(xintercept = crit_pts[2,1], col = "red") + 
+    scale_y_continuous(breaks = breaks_pretty(6),labels = hr2day) + 
+    scale_x_continuous(breaks = breaks_width(2, 0)) + 
+    labs(x = 'Hours Since Start', y = bquote(.(colnames(FLASK)[13]) ~ d^-1))
+  
+  plot_limits <-get_plot_limits(der1_plot)
+  der1_plot <- der1_plot + annotate(geom = "rect", 
+                            xmin=filter(flaskdata, flask ==letter)$dark1_since_light1,
+                            xmax=filter(flaskdata, flask ==letter)$light2_since_light1, 
+                            ymin=plot_limits[[3]], 
+                            ymax=plot_limits[[4]], alpha= 0.3, fill = "black")
+  
+  # Change colour of lines for each light_regime 
+  if (FLASK$light_regime[1] == "1608"){
+    use_col <- gg_color_hue(3)[3]
+  }else if (FLASK$light_regime[1] == "1212") {
+    use_col <- gg_color_hue(3)[2]
+    } else {
+      use_col <- gg_color_hue(3)[1]
+      }
+  
+  
+  # Store the derivative plot and add flask name 
+  # Also add text indicating light regime 
+  grob <- grobTree(textGrob(paste("Light Regime: ", FLASK$light_regime[1]), x=0,  y=0.95, hjust=0,
+  gp=gpar(col=use_col, fontsize=13)))
+  xmin<- 7
+  xmax<-17
+  
+  if(filter(flaskdata, flask ==letter)$dark1_since_light1[1] <= xmin){
+    darkmin <- xmin
+    } else {darkmin<- filter(flaskdata, flask ==letter)$dark1_since_light1}
+  
+  if(filter(flaskdata, flask ==letter)$light2_since_light1[1]>=xmax){
+    darkmax <- xmax
+    } else {darkmax <- filter(flaskdata, flask ==letter)$light2_since_light1}
+
+  all_der_plots[[letter]] <- der1_plot + 
+    ggtitle(paste("Flask",letter, sep = " ")) +
+    annotation_custom(grob) + 
+    scale_x_continuous(breaks = breaks_width(2, 0), limits = c(xmin,xmax)) + 
+    annotate(geom = "rect", 
+             xmin=darkmin,
+             xmax=darkmax, 
+             ymin=plot_limits[[3]], 
+             ymax=plot_limits[[4]], alpha= 0.3, fill = "black") +
+    geom_vline(xintercept = crit_pts[2,1], col = use_col, lwd = 2)
+  
+  # create list for grobs in gridExtra
+  p <- list(est_plot,der1_plot)
+  
+  # Store plots in img folder
   dev.new()
     png(file.path("../report/img",paste("model_EVENTS_der", letter, ".png", sep="_")), width = 800, height = 800)
-  gridExtra::grid.arrange(grobs = ders, ncol = 1, nrow = 3)
+    gridExtra::grid.arrange(grobs = p, ncol = 1, nrow = length(p))
   dev.off()    
-  # Creation of dataframe containing critical point info
-  crit_pts <- rbind(crit_pts,data.frame(cbind(flask = c(letter,letter,letter),der = c("Estimation","First_der", "Second_der"), rbind(critical(fit)[[1]], critical(fit)[[2]], critical(fit)[[3]]))))
 }
 
-# While critical does a good job in identifying the hour_index at the point of inflection for some of the plots, very often it is looking at the wrong maximum of the covariate of x for the estimate, or the wrong maximum for the 1st der, or the  wrong intersection with 0 for the 2nd der. In the cases that it is totally off, we will just get the results manually through looking at the graph: 
+# Create a plot of all derivatives stacked on top of each other (except A, H, and I)
+# remove unnecessary plots from list 
+all_der_plots <- within(all_der_plots, rm(A, H, I)) 
+# Reorder so that light regimes are in order 
+all_der_plots <- all_der_plots[c("B", "E", "F", "G", "L", "J", "K")]
+
+dev.new()
+png(file.path("../report/img",paste("model_EVENTS_der", "ALL", ".png", sep="_")), width = 800, height = 1600)
+gridExtra::grid.arrange(grobs = all_der_plots , ncol = 1, nrow = length(all_der_plots))
+dev.off()  
+
+# Make a scatter plot for the points 
+events_change <- crit_pts_all%>%
+  filter(der == "First_der") %>%
+  select(Critical, flask) %>%
+  mutate(light_regime = c("1608", "1608", "1608", "1608", "1212", "1212", "0816", "0816", "0816", "1212")) %>%
+  filter(flask %in% c("B", "E", "F", "G", "J", "K", "L"))
+
+dev.new()
+  png(file.path("../report/img",paste("Max_Events", "Change", ".png", sep="_")), width = 1200, height = 600)
+ggplot(events_change, aes(light_regime, Critical))+
+    geom_point(aes(color = light_regime, size = 2)) + 
+    coord_flip() +
+    geom_text(aes(label= flask),hjust=1.5, vjust=-1) + 
+    scale_y_continuous(limits = c(range(events_change$Critical)[1]-1,range(events_change$Critical)[2]+1 )) +
+    theme_bw() +
+    ggtitle("Events change") + 
+    theme(axis.text=element_text(size=16),
+        axis.title=element_text(size=16,face="bold"),
+        legend.title =element_text(size=16,face="bold"),
+        legend.text = element_text(size=16))
+dev.off()
+  
+# Make the whole thing a loop? Dont waste your time lmao 
+# for (col in colnames(d_ss_mean[13:16])){
+#   what <- col
+# }
+
+graphics.off()
+```
 
 events_change <- data.frame(flask = c("E","F","G","J","K","L" ),
                      hour_index = c(12.5645645645646, 
@@ -507,129 +662,14 @@ dev.new()
 dev.off()  
 
 #### Try to repeat procedure using FSC to see if there are big differences in growth rate changes? FSC should b inversely proportional to growth rates? when they divide, FSC should ~ half 
-
-for (letter in unique(d_ss_mean$flask)) {
-  FLASK<- filter(d_ss_mean,flask == letter)
-  fit <- frfast(`Picochlorum Median FSC-A_mean`~ hour_index, data = FLASK)
-  ders <- lapply(0:2, function(x) autoplot(fit, der = x,col = "red", pcol = "black", lwd = 0.5)+
-                   theme_bw()+
-                   scale_x_continuous(breaks=seq(0,28,1)))
-  # Create and store plots in img folder
-  dev.new()
-    png(file.path("../report/img",paste("model_FSC_der", letter, ".png", sep="_")), width = 800, height = 800)
-  gridExtra::grid.arrange(grobs = ders, ncol = 1, nrow = 3)
-  dev.off()    
-}
-
-FSC_change <- data.frame(flask = c("E","F","G","J","K","L" ),
-                     hour_index = c(11.8, 
-                                12.6, 
-                                12.7,
-                                11.8,
-                                12.4,
-                                12.6),
-                     light_regime = c("1608","1608","1212","0816","0816","1212")) 
-
-dev.new()
-  png(file.path("../report/img",paste("Max_FSC", "Change", ".png", sep="_")), width = 1200, height = 600)
-  ggplot(FSC_change, aes(light_regime, hour_index))+
-    geom_point(aes(color = light_regime, size = 2)) + 
-    coord_flip() +
-    geom_text(aes(label= flask),hjust=1.5, vjust=-1) + 
-    scale_y_continuous(limits = c(11,13.5)) +
-    theme_bw() +
-    ggtitle("FSC change") + 
-    theme(axis.text=element_text(size=16),
-        axis.title=element_text(size=16,face="bold"),
-        legend.title =element_text(size=16,face="bold"),
-        legend.text = element_text(size=16))
-dev.off()  
+## Cell parameters should not be analysed the same way as cell counts!!! You should be looking at the maxima == the 1st derivative = 0. 
 
 
-#### SSC!!!!!
-
-for (letter in unique(d_ss_mean$flask)) {
-  FLASK<- filter(d_ss_mean,flask == letter)
-  fit <- frfast(`Picochlorum Median SSC-A_mean`~ hour_index, data = FLASK)
-  ders <- lapply(0:2, function(x) autoplot(fit, der = x,col = "red", pcol = "black", lwd = 0.5)+
-                   theme_bw()+
-                   scale_x_continuous(breaks=seq(0,28,1)))
-  # Create and store plots in img folder
-  dev.new()
-    png(file.path("../report/img",paste("model_SSC_der", letter, ".png", sep="_")), width = 800, height = 800)
-  gridExtra::grid.arrange(grobs = ders, ncol = 1, nrow = 3)
-  dev.off()    
-}
-
-SSC_change <- data.frame(flask = c("E","F","G","J","K","L" ),
-                     hour_index = c(11.8, 
-                                12.7, 
-                                12.8,
-                                12,
-                                12.45,
-                                13.2),
-                     light_regime = c("1608","1608","1212","0816","0816","1212")) 
-
-dev.new()
-  png(file.path("../report/img",paste("Max_SSC", "Change", ".png", sep="_")), width = 1200, height = 600)
-  ggplot(SSC_change, aes(light_regime, hour_index))+
-    geom_point(aes(color = light_regime, size = 2)) + 
-    coord_flip() +
-    geom_text(aes(label= flask),hjust=1.5, vjust=-1) + 
-    scale_y_continuous(limits = c(11,13.5)) +
-    theme_bw() +
-    ggtitle("SSC change") + 
-    theme(axis.text=element_text(size=16),
-        axis.title=element_text(size=16,face="bold"),
-        legend.title =element_text(size=16,face="bold"),
-        legend.text = element_text(size=16))
-dev.off()  
-
-#### PC5.5!!!
-
-for (letter in unique(d_ss_mean$flask)) {
-  FLASK<- filter(d_ss_mean,flask == letter)
-  fit <- frfast(`Picochlorum Median PC5.5-A_mean`~ hour_index, data = FLASK)
-  ders <- lapply(0:2, function(x) autoplot(fit, der = x,col = "red", pcol = "black", lwd = 0.5)+
-                   theme_bw()+
-                   scale_x_continuous(breaks=seq(0,28,1)))
-  # Create and store plots in img folder
-  dev.new()
-    png(file.path("../report/img",paste("model_PC5.5_der", letter, ".png", sep="_")), width = 800, height = 800)
-  gridExtra::grid.arrange(grobs = ders, ncol = 1, nrow = 3)
-  dev.off()    
-}
-
-PC5.5_change <- data.frame(flask = c("E","F","G","J","K","L" ),
-                     hour_index = c(11.8, 
-                                12.6, 
-                                12.5,
-                                10.5,
-                                12.2,
-                                11.6),
-                     light_regime = c("1608","1608","1212","0816","0816","1212")) 
-
-dev.new()
-  png(file.path("../report/img",paste("Max_PC5.5", "Change", ".png", sep="_")), width = 1200, height = 600)
-  ggplot(PC5.5_change, aes(light_regime, hour_index))+
-    geom_point(aes(color = light_regime, size = 2)) + 
-    coord_flip() +
-    geom_text(aes(label= flask),hjust=1.5, vjust=-1) + 
-    scale_y_continuous(limits = c(9.5,13.5)) +
-    theme_bw() +
-    ggtitle("PC5.5 change") + 
-    theme(axis.text=element_text(size=16),
-        axis.title=element_text(size=16,face="bold"),
-        legend.title =element_text(size=16,face="bold"),
-        legend.text = element_text(size=16))
-dev.off()  
 
 # This is to clear the device list (dev.list()) 
 graphics.off()
 
 ```
-
-
 
 
 
@@ -640,6 +680,12 @@ Everything below here is irrelevant
 #### EXAMPLE DATASET #####
 data(barnacle)
 # Nonparametric regression without interactions
+
+fit <- frfast(DW ~ RC, data = barnacle, nboot = 100, smooth = "kernel")
+# using splines
+fit <- frfast(DW ~ s(RC), data = barnacle, nboot = 100, smooth = "splines", cluster = TRUE, ncores = 2)
+fit
+#summary(fit)
 fit <- frfast(DW ~ RC, data = barnacle, nboot = 50)
 autoplot(fit)
 autoplot(fit, points = FALSE) + ggtitle("Title")
@@ -696,8 +742,9 @@ critical(fit, der = 2)
 # Trying out pspline package to get nonparametric derivative estimations 
 
 # Since pspline requires dataset to not have more than 1 value for each point on the x axis, have to find the d_ss_mean, but with all the A and M values meaned out as well. 
-d_ss_mean_noAM <- d_ss %>% 
-  group_by(flask, attempt,hour_index, FAhi,light_regime, julian_time,sample_datetime, sample_time, lightORdark) %>% 
+library(pspline)
+d_ss_mean_noAM <- d_ss_mean %>% 
+  group_by(flask, attempt,hour_index,hr_since_light, FAhi,light_regime, julian_time,sample_datetime, sample_time, lightORdark) %>% 
   summarise_at(.vars = names(.)[13:16],
                .funs = c(mean="mean"))
 
@@ -705,7 +752,7 @@ d_ss_mean_noAM <- d_ss %>%
 FLASK <- filter(d_ss_mean_noAM, flask == "E")
 
 # create estimate of curve using smooth.Pspline() function 
-pspl <- smooth.Pspline(FLASK$julian_time, FLASK$`Picochlorum Events/μL(V)_mean`,norder =3 )
+pspl <- smooth.Pspline(FLASK$julian_time, FLASK$`Picochlorum Events/μL(V)_mean_mean`,norder =3 )
 d0 <- predict(pspl, FLASK$julian_time, nderiv=0)
 plot(pspl)
 lines(FLASK$julian_time, d0, lwd=3, lty=2, col="red")
@@ -714,10 +761,10 @@ lines(FLASK$julian_time, d0, lwd=3, lty=2, col="red")
 d1 <- predict(pspl, FLASK$julian_time, nderiv=1)
 plot(FLASK$julian_time, d1)
 lines(FLASK$julian_time, d1, lwd=3, lty=2, col="red")
-gr_data <- data.frame("x" = FLASK$julian_time, "y" =FLASK$`Picochlorum Events/μL(V)_mean`, "d0" = d0, "d1" = d1)
+gr_data <- data.frame("x" = FLASK$julian_time, "y" =FLASK$`Picochlorum Events/μL(V)_mean_mean`, "d0" = d0, "d1" = d1)
 
 p <- ggplot(data =gr_data) + 
-  geom_point(aes(x = x, y = y)) + 
+  geom_point(aes(x = x, y = d1)) + 
   geom_smooth(aes(x = x, y = y))
 
   geom_point(aes(x=x, y= d1))
