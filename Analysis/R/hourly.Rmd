@@ -1,0 +1,222 @@
+---
+title: "Picochlorum Growth Rate Analysis"
+date: "`r Sys.Date()`"
+author: "David Mah"
+output:
+  html_document: default
+  rmdformats::readthedown:
+    highlight: kate
+  rmarkdown::html_vignette: 
+    css: 
+    - !expr system.file("rmarkdown/templates/html_vignette/resources/vignette.css", package = "rmarkdown")
+    - !expr system.file("includes/stylesheets/summarytools.css", package = "summarytools")
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github  
+---
+
+
+```{r knitr_init, echo=FALSE, cache=FALSE}
+library(knitr)
+library(rmdformats)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+	             cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               tidy = FALSE,
+               fig.height=8, 
+               fig.width=8,
+               results = 'asis')
+opts_knit$set(width=75)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library("ggplot2")
+library("dplyr")
+library("plotrix" ) # needed for standard error
+library("readxl") # Read excel file
+library("readr") 
+library("lubridate") 
+library("tidyr") 
+library("pspline")
+library("npregfast")
+library("ggpmisc")
+library(mgcv)
+library(scales)
+library(grid)
+ 
+
+get_plot_limits <- function(plot) {
+    gb = ggplot_build(plot)
+    xmin = gb$layout$panel_params[[1]]$x.range[1]
+    xmax = gb$layout$panel_params[[1]]$x.range[2]
+    ymin = gb$layout$panel_params[[1]]$y.range[1]
+    ymax = gb$layout$panel_params[[1]]$y.range[2]
+    list(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax)
+    }
+
+# Create function to emulate ggplot colour scheme: 
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+  }
+
+
+```
+
+```{r, echo = FALSE, message = FALSE}
+
+## Read the data
+
+# Find all csv files 
+myfiles = list.files(path="../data/hourly_data", pattern="*.csv", full.names=TRUE)
+
+# Read all csv files
+data_all <- lapply(myfiles, read_csv, skip =2)
+data <- do.call(rbind, data_all)
+
+# Split the tube names
+data <- data %>% 
+  dplyr::mutate(ID =  substr(`Tube Name:`, 1,2), 
+                repli = substr(`Tube Name:`, 3,3),
+                AorM = substr(`Tube Name:`, 4,4)) %>%
+  mutate(ID = as.numeric(ID))
+
+
+# Create metadata df 
+sample_start <- data.frame("what"= c("sample", "dark_on", "light_on", "dark_on2"), "year" = c(2020, 2020, 2020, 2020), "month" = c(12, 12, 12,12), "day" = c(15,15,16,16), "hour" = c(20,20,8,20), "min" = c(40,05,05,05)) %>%
+  dplyr::mutate("datetime" = make_datetime(year, month, day, hour, min))
+
+data <- data %>% 
+  dplyr::mutate("sample_datetime" = ID*(60*60) + sample_start$datetime[1]) %>%
+  dplyr::mutate("dark_on_datetime" = sample_start$datetime[2]) %>%
+  dplyr::mutate("light_on_datetime" = sample_start$datetime[3]) %>%
+  dplyr::mutate("dark_on_datetime2" = sample_start$datetime[4]) 
+data <- data %>% 
+  mutate("hr_since_light" = time_length(sample_datetime - light_on_datetime , unit = "hour"))
+
+
+# Extract the more useful data
+data_pico <- data %>%
+  select(ID,repli, AorM,sample_datetime,dark_on_datetime, light_on_datetime,dark_on_datetime2, hr_since_light, `Picochlorum Events`,`Picochlorum Events/μL(V)`, `Picochlorum Median FSC-A`, `Picochlorum SD FSC-A`, `Picochlorum Median SSC-A`, `Picochlorum SD SSC-A`, `Picochlorum Median PC5.5-A`, `Picochlorum SD PC5.5-A`, `Picochlorum Median PE-A`, `Picochlorum SD PE-A`) 
+
+# Mean of optimal dilutions for each starting concentration 
+data_pico_mean <- data_pico %>% 
+  group_by(ID, AorM, sample_datetime, dark_on_datetime,light_on_datetime, dark_on_datetime2, hr_since_light) %>% 
+  summarise_at(.vars = names(.)[9:18],
+               .funs = c(mean="mean"))
+```
+
+
+
+
+```{r}
+# Plot for Events
+
+events <- ggplot(data_pico, aes(x = sample_datetime, y = `Picochlorum Events/μL(V)`))+ 
+    scale_y_continuous(trans = "log10", sec.axis = sec_axis(~./4, name = "Temperature"))
+plot_limits<-get_plot_limits(events)
+xmin <- c(data_pico_mean$dark_on_datetime[1],data_pico_mean$dark_on_datetime2[1])
+xmax <- c(data_pico_mean$light_on_datetime[1],plot_limits[[2]])
+events <- events + annotate(geom = "rect", 
+                            xmin= xmin,
+                            xmax= xmax, 
+                            ymin=10^plot_limits[[3]], 
+                            ymax=10^plot_limits[[4]], alpha= 0.5, fill = "black") +
+  geom_point(aes(color = AorM)) +
+  xlab("Sample Date Time") +
+  ylab("Log(Events/μL)") + 
+  ggtitle("Picochlorum Events/μL")
+  labs(col="Light \nCondition") +
+  theme_bw()+ 
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        legend.title =element_text(size=12,face="bold"),
+        legend.text = element_text(size=12),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  #png(file.path("../report/img","Events_Facet_Wrap.png"), width = 800, height = 600)
+  print(events)
+  #dev.off()  
+
+```
+``` {r}
+
+# crit_pts_all <- data.frame()
+# all_der_plots <- list()
+# for (letter in unique(d_ss_mean$flask)) {
+#   # remove A because it is the time is not continuous for 24h 
+#   if (letter == "A"){
+#   } else {
+#   # Mask out the first and last few points from the dataset 
+#   FLASK <- d_ss_mean %>% 
+#   filter(flask == letter, hr_since_light >=2 & hr_since_light <= 23) %>%
+
+FLASK <- data_pico_mean %>% 
+  rename(events = `Picochlorum Events/μL(V)_mean`) %>% 
+  filter(hr_since_light >=-10 & hr_since_light <= 12)
+  # Use npregfast::frfast to get the fit data 
+  fit <- frfast(events~ hr_since_light, data = FLASK, p=2,h0=0.16, rank1 =9, ranku= 17, kbin = 300)
+  # Extract Critical points data 
+  crit_pts <-data.frame(matrix(unlist(critical(fit)), nrow=length(critical(fit)), byrow=TRUE)) %>%
+  mutate(der = c("Estimation","First_der","Second_der")) %>%
+  rename(Critical = X1,
+         Lwr = X2,
+         Upr = X3) 
+ 
+  # Create plots
+  est_plot <- autoplot(fit) + 
+    geom_vline(xintercept = crit_pts[2,1], col = "red") +
+    scale_x_continuous(breaks = breaks_width(2, 0)) + 
+    ggtitle("Hourly Test") + 
+    labs(x = 'Hours Since Start')
+  
+  plot_limits <-get_plot_limits(est_plot)
+  
+  xmin <- c(time_length(data_pico_mean$dark_on_datetime[1] - data_pico_mean$light_on_datetime[1], unit ="hour"),
+            time_length(data_pico_mean$dark_on_datetime2[1] - data_pico_mean$light_on_datetime[1], unit ="hour"))
+  xmax <- c(0,
+            plot_limits[[2]])
+  
+  est_plot <- est_plot + annotate(geom = "rect", 
+                            xmin=xmin,
+                            xmax=xmax, 
+                            ymin=plot_limits[[3]], 
+                            ymax=plot_limits[[4]], alpha= 0.3, fill = "black")
+  
+  der1_plot <- autoplot(fit, der = 1) + 
+    geom_vline(xintercept = crit_pts[2,1], col = "red") + 
+    scale_y_continuous(breaks = breaks_pretty(6),labels = hr2day) + 
+    scale_x_continuous(breaks = breaks_width(2, 0)) + 
+    labs(x = 'Hours Since Start', y = bquote(.(colnames(FLASK)[13]) ~ d^-1))
+  
+  plot_limits <-get_plot_limits(der1_plot)
+  
+  xmin <- c(time_length(data_pico_mean$dark_on_datetime[1] - data_pico_mean$light_on_datetime[1], unit ="hour"),
+            time_length(data_pico_mean$dark_on_datetime2[1] - data_pico_mean$light_on_datetime[1], unit ="hour"))
+  xmax <- c(time_length(data_pico_mean$light_on_datetime[1] - data_pico_mean$light_on_datetime[1], unit ="hour"),
+            plot_limits[[2]])
+  der1_plot <- der1_plot + annotate(geom = "rect", 
+                            xmin=xmin,
+                            xmax=xmax, 
+                            ymin=plot_limits[[3]], 
+                            ymax=plot_limits[[4]], alpha= 0.3, fill = "black")
+  
+  # Change colour of lines for each light_regime 
+    use_col <- gg_color_hue(3)[3]
+
+ der1_plot<- der1_plot + 
+    ggtitle("Der Plot") +
+    scale_x_continuous(breaks = breaks_width(2, 0), limits = c(xmin,xmax))
+    geom_vline(xintercept = crit_pts[2,1], col = use_col, lwd = 2)
+  
+  # create list for grobs in gridExtra
+  p <- list(est_plot,der1_plot)
+  
+  gridExtra::grid.arrange(grobs = p, ncol = 1, nrow = length(p))
+```

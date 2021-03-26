@@ -76,7 +76,9 @@ data <- data %>%
   separate(dilu, 
            into = c("dil_factor", "start_cells"), 
            sep = "(?<=[0-9])(?=[A-Za-z])"
-           )
+           ) %>%
+  mutate(dil_factor = as.numeric(dil_factor)) %>%
+  mutate(day = as.numeric(day))
 
 
 for (row in 1:nrow(data)){
@@ -112,14 +114,14 @@ time_start <- data.frame("year" = 2020, "month" = 10, "day" = 21, "hour" = 11, "
   dplyr::mutate("datetime" = make_datetime(year, month, day, hour, min))
 
 data <- data %>% 
-  dplyr::mutate("sample_datetime" = as.numeric(day)*(60*60*24) + time_start$datetime,
-                "day_FF_start_cells" = paste(day,FF,start_cells, sep = ""), 
-                "Weighted Picochlorum Events/μL(V)" = data$`Picochlorum Events/μL(V)` * as.numeric(data$dil_factor))
+  dplyr::mutate("sample_datetime" = day*(60*60*24) + time_start$datetime,
+                "day_start_cells" = paste(day,start_cells, sep = ""), 
+                "Weighted Picochlorum Events/μL(V)" = data$`Picochlorum Events/μL(V)` * (data$dil_factor))
 
 
 # Extract the more useful data
 data_pico <- data %>%
-  select(day_FF_start_cells,start_cells,`repli`,day, FF, dil_factor,sample_datetime,`Picochlorum Events`,`Weighted Picochlorum Events/μL(V)`,`Picochlorum Events/μL(V)`, `Picochlorum Median FSC-A`, `Picochlorum SD FSC-A`, `Picochlorum Median SSC-A`, `Picochlorum SD SSC-A`, `Picochlorum Median PC5.5-A`, `Picochlorum SD PC5.5-A`, `Picochlorum Median PE-A`, `Picochlorum SD PE-A`) 
+  select(day_start_cells,start_cells,`repli`,day, FF, dil_factor,sample_datetime,`Weighted Picochlorum Events/μL(V)`,`Picochlorum Events/μL(V)`, `Picochlorum Median FSC-A`, `Picochlorum Median SSC-A`, `Picochlorum Median PC5.5-A`) 
 
 # Select rows of dilutions that best fit 10^3 rule
 
@@ -150,8 +152,8 @@ for(row in 1:nrow(data_pico_no0)){
 
 # Mean of optimal dilutions for each starting concentration 
 data_pico_mean <- data_pico_no0_Rdil %>% 
-  group_by(day_FF_start_cells,start_cells, day,FF, dil_factor, sample_datetime) %>% 
-  summarise_at(.vars = names(.)[8:17],
+  group_by(day_start_cells,start_cells, day,FF, dil_factor, sample_datetime) %>% 
+  summarise_at(.vars = names(.)[8:12],
                .funs = c(mean="mean")) %>%
   transform(day = as.numeric(day)) %>%
   transform(dil_factor = as.numeric(dil_factor))
@@ -166,29 +168,70 @@ data_pico_mean <- data_pico_no0_Rdil %>%
 ```{r}
 # Plot for Events
 
-events <- ggplot(data_pico_mean, aes(x = data_pico_mean$sample_datetime, y = log(data_pico_mean$Weighted.Picochlorum.Events.μL.V._mean)))+
+events <- ggplot(data_pico_mean, aes(x = data_pico_mean$sample_datetime, y = data_pico_mean$Weighted.Picochlorum.Events.μL.V._mean))+
   geom_smooth() +
   geom_point(aes(col=FF)) +
-  xlab("Sample DateTime") +
-  ylab("Log(Events/μL)") +
-#  scale_y_continuous(name= "Log(Events/μL)", limits = c(0,8)) +
+  labs(title="Optimal Sampling Window") +
+  labs(color='Flash Freeze?') +
+  xlab("") +
+  ylab("Events/μL") +
+  scale_y_continuous(trans = "log10") +
   theme_bw()+
   scale_x_datetime(breaks = date_breaks("days"), labels = date_format("%b %d"))+ 
-  theme(axis.text.x = element_text(angle = 60, vjust = 0.5, hjust=1))
-  # theme(axis.text=element_text(size=28),
-  #       axis.title=element_text(size=28,face="bold"),
-  #       legend.title =element_text(size=28,face="bold"),
-  #       legend.text = element_text(size=28)) 
+  theme(title = element_text(size=14, face="bold"), 
+        axis.text.x = element_text(angle = 60, vjust = 0.5, hjust=1), 
+        axis.text=element_text(size=14),
+        axis.title=element_text(size=14,face="bold"),
+        legend.title =element_text(size=14,face="bold"),
+        legend.text = element_text(size=14))
 events <- events + facet_wrap(~start_cells)
 
-# png("../report/img/Event_JT.png", width = 1000, height = 800)
 events
-# dev.off()
 
-# Plot of comparison between FF and NFF
+png("../report/img/daily_growth.png", width = 800, height = 600)
+print(events)
+dev.off()
+
 
 
 ```
+
+```{r}
+# Plot of comparison between FF and NFF
+
+# get df of only 
+
+
+# Keep only rows of FAhi where both FF and NFF exist
+
+only_ff_nff <- subset(data_pico_mean, day_start_cells %in% data_pico_mean[duplicated(data_pico_mean$day_start_cells),"day_start_cells"])
+
+# Compare differences in 
+only_ff <- filter(only_ff_nff,FF == "FF")
+only_nff <- filter(only_ff_nff,FF == "NFF")
+FF_ratio <-data.frame(c(only_ff[1:6],only_nff[-c(1:6)]/only_ff[-c(1:6)])) %>%
+  rename("Events/μL" = Picochlorum.Events.μL.V._mean,
+         "FSC" = Picochlorum.Median.FSC.A_mean,
+         "SSC" = Picochlorum.Median.SSC.A_mean,
+         "PC5.5" = Picochlorum.Median.PC5.5.A_mean)
+FF_ratio <- FF_ratio[,c(3,8:11)] 
+FF_ratio <- FF_ratio %>% gather(parameter, ratio, -day)
+
+p <- ggplot(FF_ratio, aes(x=parameter, y=ratio)) + 
+  geom_boxplot(fill="gray") +
+  labs(title="Ratio of FCM parameters of direct -80°C storage against LNO2",x="FCM Parameters", y = "Ratio")+
+  theme_classic() + 
+  theme(title = element_text(size=14, face="bold"),
+        axis.text=element_text(size=14),
+        axis.title=element_text(size=14,face="bold"))
+
+png(file.path("../report/img","Daily_FF_NFF.png"), width = 800, height = 400)
+  print(p)
+dev.off()  
+
+
+```
+
 
 
 
