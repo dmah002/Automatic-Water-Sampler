@@ -51,6 +51,7 @@ library("ggpmisc")
 library(mgcv)
 library(scales)
 library(grid)
+library(stargazer)
 
 # This is to clear the device list (dev.list()) 
 graphics.off()
@@ -249,9 +250,20 @@ data_all <- lapply(myfiles, read_csv)
 tempdata <- do.call(rbind, data_all)
 
 colnames(tempdata) <- c("datetime", "Temperature", "Humidity")
-ggplot(tempdata, aes(x = datetime, y = Temperature)) + 
+temp <- ggplot(tempdata, aes(x = datetime, y = Temperature)) + 
   geom_line() + 
-  geom_smooth()
+  geom_smooth() + 
+  xlab("Date") +  
+  scale_x_datetime(breaks = date_breaks("weeks"), labels = date_format("%b %d")) + 
+  theme(title = element_text(size=16, face="bold"), 
+        axis.text=element_text(size=16),
+        axis.title=element_text(size=16,face="bold"),
+        legend.title =element_text(size=16,face="bold"),
+        legend.text = element_text(size=16))
+
+png(file.path("../report/img","Temp.png"), width = 1200, height = 600)
+  print(temp)
+dev.off()  
 
 ```
 
@@ -313,7 +325,12 @@ preservation_plot <- ggplot(d_ss_mean_AM_A_ratio, aes(x = time_since_tube_change
   geom_hline(yintercept=1, linetype="dashed", color = "red")+
   xlab("Time Since Tube Change") +
   ylab("Ratio of Stored against Immediate analysis") + 
-  theme_bw()
+  theme_bw() + 
+  theme(title = element_text(size=14, face="bold"), 
+        axis.text=element_text(size=14),
+        axis.title=element_text(size=14,face="bold"),
+        legend.title =element_text(size=14,face="bold"),
+        legend.text = element_text(size=14))
 preservation_plot <-  preservation_plot + facet_wrap(~parameter)
 
 png(file.path("../report/img","preservation_plot.png"), width = 800, height = 600)
@@ -351,6 +368,7 @@ for (letter in unique(d_ss_mean$flask)) {
          Upr = X3) 
   
   # Store ALL crit pt data
+  crit_pts <- mutate(crit_pts, light_regime = rep(FLASK$light_regime[1],nrow(crit_pts)))
   crit_pts_all <- rbind(crit_pts_all, crit_pts)
 
   # Create plots
@@ -393,7 +411,7 @@ for (letter in unique(d_ss_mean$flask)) {
   # Store the derivative plot and add flask name 
   # Also add text indicating light regime 
   grob <- grobTree(textGrob(paste("Light Regime: ", FLASK$light_regime[1]), x=0,  y=0.95, hjust=0,
-  gp=gpar(col=use_col, fontsize=13)))
+  gp=gpar(col=use_col, fontsize=18)))
   xmin<- 7
   xmax<-17
   
@@ -414,16 +432,21 @@ for (letter in unique(d_ss_mean$flask)) {
              xmax=darkmax, 
              ymin=plot_limits[[3]], 
              ymax=plot_limits[[4]], alpha= 0.3, fill = "black") +
-    geom_vline(xintercept = crit_pts[2,1], col = use_col, lwd = 2)
+    geom_vline(xintercept = crit_pts[2,1], col = use_col, lwd = 2) + 
+      theme(title = element_text(size=18, face="bold"), 
+        axis.text=element_text(size=18),
+        axis.title=element_text(size=18,face="bold"),
+        legend.title =element_text(size=18,face="bold"),
+        legend.text = element_text(size=18))
   
   # create list for grobs in gridExtra
   p <- list(est_plot,der1_plot)
   
   # Store plots in img folder
-  dev.new()
-    png(file.path("../report/img",paste("model_EVENTS_der", letter, ".png", sep="_")), width = 800, height = 800)
-    gridExtra::grid.arrange(grobs = p, ncol = 1, nrow = length(p))
-  dev.off()    
+  # dev.new()
+  #   png(file.path("../report/img",paste("model_EVENTS_der", letter, ".png", sep="_")), width = 800, height = 800)
+  #   gridExtra::grid.arrange(grobs = p, ncol = 1, nrow = length(p))
+  # dev.off()    
   }
 }
 
@@ -489,6 +512,7 @@ for (letter in unique(d_ss_mean$flask)) {
          Upr = X3) 
   
   # Store ALL crit pt data
+  crit_pts <- mutate(crit_pts, light_regime = rep(FLASK$light_regime[1],nrow(crit_pts)))
   crit_pts_all <- rbind(crit_pts_all, crit_pts)
 
   # Create plots
@@ -508,7 +532,7 @@ for (letter in unique(d_ss_mean$flask)) {
   
   # Create Text for Light Regime 
   grob <- grobTree(textGrob(paste("Light Regime: ", FLASK$light_regime[1]), x=0,  y=0.95, hjust=0,
-  gp=gpar(col=use_col, fontsize=13)))
+  gp=gpar(col=use_col, fontsize=18)))
   xmin<- 0
   xmax<-24
   
@@ -533,7 +557,13 @@ for (letter in unique(d_ss_mean$flask)) {
    labs(x = 'Hours Since Start') +
    annotation_custom(grob)
   
-  all_est_plots[[letter]] <- est_plot 
+  all_est_plots[[letter]] <- est_plot + 
+      theme(title = element_text(size=18, face="bold"), 
+        axis.text=element_text(size=18),
+        axis.title=element_text(size=18,face="bold"),
+        legend.title =element_text(size=18,face="bold"),
+        legend.text = element_text(size=18))
+  
 }
 
 # Create a plot of all derivatives stacked on top of each other (except A, H, and I)
@@ -598,6 +628,7 @@ for (letter in unique(d_ss_mean$flask)) {
          Upr = X3) 
   
   # Store ALL crit pt data
+  crit_pts <- mutate(crit_pts, light_regime = rep(FLASK$light_regime[1],nrow(crit_pts)))
   crit_pts_all <- rbind(crit_pts_all, crit_pts)
 
   # Create plots
@@ -617,7 +648,7 @@ for (letter in unique(d_ss_mean$flask)) {
   
   # Create Text for Light Regime 
   grob <- grobTree(textGrob(paste("Light Regime: ", FLASK$light_regime[1]), x=0,  y=0.95, hjust=0,
-  gp=gpar(col=use_col, fontsize=13)))
+  gp=gpar(col=use_col, fontsize=18)))
   xmin<- 0
   xmax<-24
   
@@ -642,7 +673,13 @@ for (letter in unique(d_ss_mean$flask)) {
    labs(x = 'Hours Since Start') +
    annotation_custom(grob)
   
-  all_est_plots[[letter]] <- est_plot 
+  all_est_plots[[letter]] <- est_plot + 
+      theme(title = element_text(size=18, face="bold"), 
+        axis.text=element_text(size=18),
+        axis.title=element_text(size=18,face="bold"),
+        legend.title =element_text(size=18,face="bold"),
+        legend.text = element_text(size=18))
+  
 }
 
 # Create a plot of all derivatives stacked on top of each other (except A, H, and I)
@@ -707,6 +744,7 @@ for (letter in unique(d_ss_mean$flask)) {
          Upr = X3) 
   
   # Store ALL crit pt data
+  crit_pts <- mutate(crit_pts, light_regime = rep(FLASK$light_regime[1],nrow(crit_pts)))
   crit_pts_all <- rbind(crit_pts_all, crit_pts)
 
   # Create plots
@@ -726,7 +764,7 @@ for (letter in unique(d_ss_mean$flask)) {
   
   # Create Text for Light Regime 
   grob <- grobTree(textGrob(paste("Light Regime: ", FLASK$light_regime[1]), x=0,  y=0.95, hjust=0,
-  gp=gpar(col=use_col, fontsize=13)))
+  gp=gpar(col=use_col, fontsize=18)))
   xmin<- 0
   xmax<-24
   
@@ -751,7 +789,13 @@ for (letter in unique(d_ss_mean$flask)) {
    labs(x = 'Hours Since Start') +
    annotation_custom(grob)
   
-  all_est_plots[[letter]] <- est_plot 
+  all_est_plots[[letter]] <- est_plot + 
+      theme(title = element_text(size=18, face="bold"), 
+        axis.text=element_text(size=18),
+        axis.title=element_text(size=18,face="bold"),
+        legend.title =element_text(size=18,face="bold"),
+        legend.text = element_text(size=18))
+  
 }
 
 # Create a plot of all derivatives stacked on top of each other (except A, H, and I)
@@ -797,18 +841,45 @@ Chi Square test for crit values
 ```{r}
 crit_pts_all_para
 
-# chi sq for events
+# # chi sq for events
 event_crit <- filter(crit_pts_all_para, der == "First_der", parameter == "events") %>% 
-  filter(!grepl("H", flask))
+  filter(flask != "H" & flask != "I")
+FSC_crit <- filter(crit_pts_all_para, der == "Estimation", parameter == "FSC") %>% 
+  filter(flask != "A")
+SSC_crit <- filter(crit_pts_all_para, der == "Estimation", parameter == "SSC") %>% 
+  filter(flask != "A")
+PC5.5_crit <- filter(crit_pts_all_para, der == "Estimation", parameter == "PC5.5") %>% 
+  filter(flask != "A")
 
-mean(event_crit$Critical)
-diff_all <- data.frame()
-for (time in 1:nrow(event_crit)) {
-diff <- ((event_crit[time,1] - mean(event_crit$Critical))^2)/mean(event_crit$Critical)
-diff_all<- rbind(diff_all,diff)
-}
-sum(diff_all)
 
+anova_events <- aov(Critical~light_regime, data = event_crit)
+anova_FSC <- aov(Critical~light_regime, data = FSC_crit)
+anova_SSC <- aov(Critical~light_regime, data = SSC_crit)
+anova_PC5.5 <- aov(Critical~light_regime, data = PC5.5_crit)
+
+anova_stats <- rbind(summary(anova_events)[[1]] %>% 
+        mutate(Parameter = "Events"), 
+      summary(anova_FSC)[[1]] %>% 
+        mutate(Parameter = "FSC"),
+      summary(anova_SSC)[[1]] %>% 
+        mutate(Parameter = "SSC"),
+      summary(anova_PC5.5)[[1]] %>% 
+        mutate(Parameter = "PC5.5"))
+# export as latex table
+stargazer(anova_stats, summary = FALSE)
+ summary(anova_FSC)
+ 
+ 
+ library(rstatix)
+pairwise_FSC <- FSC_crit %>% pairwise_t_test(Critical ~ light_regime, p.adjust.method = "bonferroni") %>%
+  mutate(Parameter = "FSC")
+pairwise_SSC <- SSC_crit %>% pairwise_t_test(Critical ~ light_regime, p.adjust.method = "bonferroni") %>%
+  mutate(Parameter = "SSC")
+
+pairwise_stats <- rbind(pairwise_FSC, pairwise_SSC) %>%
+  select(Parameter, group1, group2, p, p.signif, p.adj, p.adj.signif)
+stargazer(pairwise_stats, summary = FALSE)
+ 
 ```
 
 
@@ -826,7 +897,7 @@ get_table <- function (csv_path){
         comment = FALSE)
 }
 
-get_table("/Users/davidmah/Desktop/Flask Data.xlsx")
+get_table("/Users/davidmah/Desktop/Fightoplankton issues.xlsx")
 
 ```
 
