@@ -67,6 +67,11 @@ gg_color_hue <- function(n) {
   hcl(h = hues, l = 65, c = 100)[1:n]
   }
 
+# Create a function for the transformation of the y-axis for the derivative. This is to label the growth rate in d^-1. 
+hr2day <- function (x) { scales::label_number(accuracy = 0.001,
+                                       scale = 1/24,
+                                       big.mark = ",")(x) 
+  }
 
 ```
 
@@ -104,16 +109,46 @@ data <- data %>%
 
 # Extract the more useful data
 data_pico <- data %>%
-  select(ID,repli, AorM,sample_datetime,dark_on_datetime, light_on_datetime,dark_on_datetime2, hr_since_light, `Picochlorum Events`,`Picochlorum Events/μL(V)`, `Picochlorum Median FSC-A`, `Picochlorum SD FSC-A`, `Picochlorum Median SSC-A`, `Picochlorum SD SSC-A`, `Picochlorum Median PC5.5-A`, `Picochlorum SD PC5.5-A`, `Picochlorum Median PE-A`, `Picochlorum SD PE-A`) 
+  select(ID,repli, AorM,sample_datetime,dark_on_datetime, light_on_datetime,dark_on_datetime2, hr_since_light,`Picochlorum Events/μL(V)`, `Picochlorum Median FSC-A`, `Picochlorum Median SSC-A`,`Picochlorum Median PC5.5-A`, `Picochlorum Median PE-A`) 
 
 # Mean of optimal dilutions for each starting concentration 
 data_pico_mean <- data_pico %>% 
   group_by(ID, AorM, sample_datetime, dark_on_datetime,light_on_datetime, dark_on_datetime2, hr_since_light) %>% 
-  summarise_at(.vars = names(.)[9:18],
+  summarise_at(.vars = names(.)[9:13],
                .funs = c(mean="mean"))
 ```
 
 
+```{r}
+# Get only the preservation stuff 
+data_pico_pres <- data_pico %>% filter(ID == 1)
+
+stat.test <- data_pico_pres %>% 
+  t_test(`Picochlorum Events/μL(V)` ~ AorM) %>%
+  add_significance()
+
+stat.test <- data_pico_pres %>% 
+  t_test(`Picochlorum Median FSC-A` ~ AorM) %>%
+  add_significance()
+
+stat.test <- data_pico_pres %>% 
+  t_test(`Picochlorum Median SSC-A` ~ AorM) %>%
+  add_significance()
+
+stat.test <- data_pico_pres %>% 
+  t_test(`Picochlorum Median PC5.5-A` ~ AorM) %>%
+  add_significance()
+
+stat.test <- data_pico_pres %>% 
+  t_test(`Picochlorum Median PE-A` ~ AorM) %>%
+  add_significance()
+
+stat.test
+
+
+
+
+```
 
 
 ```{r}
