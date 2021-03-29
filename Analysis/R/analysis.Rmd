@@ -389,7 +389,7 @@ for (letter in unique(d_ss_mean$flask)) {
     geom_vline(xintercept = crit_pts[2,1], col = "red") + 
     scale_y_continuous(breaks = breaks_pretty(6),labels = hr2day) + 
     scale_x_continuous(breaks = breaks_width(2, 0)) + 
-    labs(x = 'Hours Since Start', y = bquote(.(colnames(FLASK)[13]) ~ d^-1))
+    labs(x = 'Hours Since Start', y = bquote(bold(.(colnames(FLASK)[13]) ~ d^-1)))
   
   plot_limits <-get_plot_limits(der1_plot)
   der1_plot <- der1_plot + annotate(geom = "rect", 
@@ -440,13 +440,26 @@ for (letter in unique(d_ss_mean$flask)) {
         legend.text = element_text(size=18))
   
   # create list for grobs in gridExtra
+
+  der1_plot <- der1_plot +
+    theme(title = element_text(size=18, face="bold"),
+        axis.text=element_text(size=18),
+        axis.title=element_text(size=18,face="bold"),
+        legend.title =element_text(size=18,face="bold"),
+        legend.text = element_text(size=18))
+
+  est_plot <- est_plot + theme(title = element_text(size=18, face="bold"),
+        axis.text=element_text(size=18),
+        axis.title=element_text(size=18,face="bold"),
+        legend.title =element_text(size=18,face="bold"),
+        legend.text = element_text(size=18))
   p <- list(est_plot,der1_plot)
-  
+
   # Store plots in img folder
-  # dev.new()
-  #   png(file.path("../report/img",paste("model_EVENTS_der", letter, ".png", sep="_")), width = 800, height = 800)
-  #   gridExtra::grid.arrange(grobs = p, ncol = 1, nrow = length(p))
-  # dev.off()    
+  dev.new()
+   png(file.path("../report/img",paste("model_EVENTS_der", letter, ".png", sep="_")), width = 800, height = 600)
+    gridExtra::grid.arrange(grobs = p, ncol = 1, nrow = length(p))
+  dev.off()
   }
 }
 
@@ -880,6 +893,40 @@ pairwise_stats <- rbind(pairwise_FSC, pairwise_SSC) %>%
   select(Parameter, group1, group2, p, p.signif, p.adj, p.adj.signif)
 stargazer(pairwise_stats, summary = FALSE)
  
+
+# Do another ANOVA but this time between parameters instead 
+
+crit_pts_all_para
+
+crit_1608 <- filter(crit_pts_all_para, der == "Estimation", light_regime == 1608) %>% 
+  filter(flask != "A") %>% 
+  filter(parameter != "events")
+
+crit_1212 <- filter(crit_pts_all_para, der == "Estimation", light_regime == 1212) %>% 
+  filter(flask != "A") %>% 
+  filter(parameter != "events")
+
+crit_0816 <- filter(crit_pts_all_para, der == "Estimation", light_regime == "0816") %>% 
+  filter(flask != "A") %>% 
+  filter(parameter != "events")
+
+anova_1608 <- aov(Critical~parameter, data = crit_1608)
+anova_1212 <- aov(Critical~parameter, data = crit_1212)
+anova_0816 <- aov(Critical~parameter, data = crit_0816)
+
+summary(anova_1608)[[1]]
+
+anova_stats <- rbind(summary(anova_1608)[[1]] %>% 
+        mutate(Light_Regime = "1608"), 
+      summary(anova_1212)[[1]] %>% 
+        mutate(Light_Regime = "1212"),
+      summary(anova_0816)[[1]] %>% 
+        mutate(Light_Regime = "0816"))
+# export as latex table
+stargazer(anova_stats, summary = FALSE)
+ summary(anova_FSC)
+
+
 ```
 
 

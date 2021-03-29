@@ -123,30 +123,34 @@ data_pico_mean <- data_pico %>%
 # Get only the preservation stuff 
 data_pico_pres <- data_pico %>% filter(ID == 1)
 
-stat.test <- data_pico_pres %>% 
+stat_events <- data_pico_pres %>% 
   t_test(`Picochlorum Events/μL(V)` ~ AorM) %>%
   add_significance()
 
-stat.test <- data_pico_pres %>% 
+stat_FSC <- data_pico_pres %>% 
   t_test(`Picochlorum Median FSC-A` ~ AorM) %>%
   add_significance()
 
-stat.test <- data_pico_pres %>% 
+stat_SSC <- data_pico_pres %>% 
   t_test(`Picochlorum Median SSC-A` ~ AorM) %>%
   add_significance()
 
-stat.test <- data_pico_pres %>% 
+stat_PC5.5 <- data_pico_pres %>% 
   t_test(`Picochlorum Median PC5.5-A` ~ AorM) %>%
   add_significance()
 
-stat.test <- data_pico_pres %>% 
-  t_test(`Picochlorum Median PE-A` ~ AorM) %>%
-  add_significance()
+# stat.test <- data_pico_pres %>% 
+#   t_test(`Picochlorum Median PE-A` ~ AorM) %>%
+#   add_significance()
 
-stat.test
+stat_all <- rbind(stat_events,stat_FSC, stat_SSC, stat_PC5.5)
+
+stat_all <- stat_all %>% select(.y., group1, group2, statistic, df, p, p.signif)
 
 
-
+library(stargazer) 
+stargazer(stat_all, summary = FALSE)
+ 
 
 ```
 
