@@ -937,6 +937,7 @@ This chunk imports a xsls file and converts it to latex table
 ```{r}
 library(xtable)
 library(readxl)
+library(stargazer)
 
 get_table <- function (csv_path){
   table <- read_excel(csv_path)
@@ -945,6 +946,13 @@ get_table <- function (csv_path){
 }
 
 get_table("/Users/davidmah/Desktop/Fightoplankton issues.xlsx")
+
+
+table_data<- read_excel("/Users/davidmah/Desktop/sampler cost.xlsx")
+stargazer(table_data, summary = FALSE)
+
+
+
 
 ```
 
