@@ -378,7 +378,7 @@ for (letter in unique(d_ss_mean$flask)) {
     geom_vline(xintercept = crit_pts[2,1], col = "red") +
     scale_x_continuous(breaks = breaks_width(2, 0)) + 
     ggtitle(paste("Flask",letter, sep = " ")) + 
-    labs(x = 'Hours Since Start')
+    labs(x = 'Hours Since Start', y = 'Cells/μL')
   
   plot_limits <-get_plot_limits(est_plot)
   est_plot <- est_plot + annotate(geom = "rect", 
@@ -455,6 +455,7 @@ for (letter in unique(d_ss_mean$flask)) {
         axis.title=element_text(size=18,face="bold"),
         legend.title =element_text(size=18,face="bold"),
         legend.text = element_text(size=18))
+  
   p <- list(est_plot,der1_plot)
 
   # Store plots in img folder
