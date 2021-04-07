@@ -47,6 +47,12 @@ library("tidyr")
 library("stringr") 
 library("scales")
  
+# Create function to emulate ggplot colour scheme: 
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+  }
+
 ```
 
 ```{r, echo = FALSE, message = FALSE}
@@ -171,24 +177,30 @@ data_pico_mean <- data_pico_no0_Rdil %>%
 events <- ggplot(data_pico_mean, aes(x = data_pico_mean$sample_datetime, y = data_pico_mean$Weighted.Picochlorum.Events.μL.V._mean))+
   geom_smooth() +
   geom_point(aes(col=FF)) +
-  labs(title="Optimal Sampling Window") +
-  labs(color='Flash Freeze?') +
+  labs(title=expression(paste("Optimal Sampling Window of Strain SMS40 (", italic("Picochlorum sp."), ")"))) +
+  labs(color='Storage Procedure') +
   xlab("") +
-  ylab("Events/μL") +
+  ylab("Cells/μL") +
   scale_y_continuous(trans = "log10") +
+  scale_color_manual(labels = c("Flash Frozen in Liquid N", "Immediate Storage at -80°C"), values = c(gg_color_hue(2)[1], gg_color_hue(2)[2])) +
   theme_bw()+
   scale_x_datetime(breaks = date_breaks("days"), labels = date_format("%b %d"))+ 
-  theme(title = element_text(size=14, face="bold"), 
+  theme(title = element_text(size=16, face="bold"), 
         axis.text.x = element_text(angle = 60, vjust = 0.5, hjust=1), 
-        axis.text=element_text(size=14),
-        axis.title=element_text(size=14,face="bold"),
-        legend.title =element_text(size=14,face="bold"),
+        axis.text=element_text(size=16),
+        axis.title=element_text(size=16,face="bold"),
+        legend.title =element_text(size=16,face="bold"),
         legend.text = element_text(size=14))
-events <- events + facet_wrap(~start_cells)
+events <- events + 
+  facet_wrap(~start_cells, labeller = labeller(start_cells = c("1000" = "Starting Conc of 10^3 cells/ml",
+                                                               "10000" = "Starting Conc of 10^4 cells/ml"))) +
+   theme(strip.text.x = element_text(size = 16))
+
+
 
 events
 
-png("../report/img/daily_growth.png", width = 800, height = 600)
+png("../report/img/daily_growth.png", width = 1000, height = 600)
 print(events)
 dev.off()
 
