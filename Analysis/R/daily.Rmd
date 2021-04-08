@@ -231,7 +231,7 @@ FF_ratio <- FF_ratio %>% gather(parameter, ratio, -day)
 
 p <- ggplot(FF_ratio, aes(x=parameter, y=ratio)) + 
   geom_boxplot(fill="gray") +
-  labs(title="Ratio of FCM parameters of direct -80°C storage against LNO2",x="FCM Parameters", y = "Ratio")+
+  labs(title="Ratio of FCM parameters of direct -80°C storage against flash-freeze",x="FCM Parameters", y = "Ratio")+
   theme_classic() + 
   theme(title = element_text(size=14, face="bold"),
         axis.text=element_text(size=14),
