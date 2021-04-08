@@ -222,7 +222,7 @@ only_ff_nff <- subset(data_pico_mean, day_start_cells %in% data_pico_mean[duplic
 only_ff <- filter(only_ff_nff,FF == "FF")
 only_nff <- filter(only_ff_nff,FF == "NFF")
 FF_ratio <-data.frame(c(only_ff[1:6],only_nff[-c(1:6)]/only_ff[-c(1:6)])) %>%
-  rename("Events/μL" = Picochlorum.Events.μL.V._mean,
+  rename("Cells/μL" = Picochlorum.Events.μL.V._mean,
          "FSC" = Picochlorum.Median.FSC.A_mean,
          "SSC" = Picochlorum.Median.SSC.A_mean,
          "PC5.5" = Picochlorum.Median.PC5.5.A_mean)
