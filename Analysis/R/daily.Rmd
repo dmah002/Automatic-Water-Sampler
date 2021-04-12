@@ -204,6 +204,10 @@ png("../report/img/daily_growth.png", width = 1000, height = 600)
 print(events)
 dev.off()
 
+png("../report/img/daily_growth_presentation.png", width = 800, height = 600)
+print(events)
+dev.off()
+
 
 
 ```
@@ -238,6 +242,10 @@ p <- ggplot(FF_ratio, aes(x=parameter, y=ratio)) +
         axis.title=element_text(size=14,face="bold"))
 
 png(file.path("../report/img","Daily_FF_NFF.png"), width = 800, height = 400)
+  print(p)
+dev.off()  
+png(file.path("../report/img","Daily_FF_NFF_presentation.png"), width = 400, height = 600)
+ p<- p + labs(title="Ratio of FCM parameters of direct -80°C\nstorage against flash-freeze")
   print(p)
 dev.off()  
 
